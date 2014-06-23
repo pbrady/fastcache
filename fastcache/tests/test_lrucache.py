@@ -12,6 +12,10 @@ class TestLRUCache(unittest.TestCase):
                 for r in range(repeat):
                     yield from zip(range(i), count(i, -1))
 
+        def func(a, b):
+            return a+b
+            
+        self.func = func
         self.arg_gen = arg_gen
 
     def test_function_attributes(self):
@@ -60,4 +64,47 @@ class TestLRUCache(unittest.TestCase):
         for i, j in self.arg_gen(max=1500, repeat=5):
             self.assertEqual(cfunc(i, j, c=i-j), tfunc(i, j, c=i-j))
 
-        print(cfunc.cache_info())
+    def test_hashable_args(self):
+        """ Function arguments must be hashable. """
+                
+        cfunc = lrucache()(self.func)
+        self.assertRaises(TypeError, cfunc, [1], 2)
+
+    def test_state_type(self):
+        """ State must be a list. """
+                
+        cache = lrucache(state=(1))
+        self.assertRaises(TypeError, cache, self.func)
+        cache = lrucache(state=-1)
+        self.assertRaises(TypeError, cache, self.func)
+
+    def test_typed_type(self):
+        """ Typed must be a bool. """
+        
+        cache = lrucache(typed=None)
+        self.assertRaises(TypeError, cache, self.func)
+        cache = lrucache(typed=5)
+        self.assertRaises(TypeError, cache, self.func)
+
+    def test_typed_False(self):
+        """ Verify typed==False. """
+        
+        cfunc = lrucache(typed=False)(self.func)
+        # initialize cache with integer args
+        cfunc(1,2)
+        self.assertIs(cfunc(1, 2), cfunc(1.0, 2))
+        self.assertIs(cfunc(1, 2), cfunc(1, 2.0))
+        # test keywords
+        cfunc(1,b=2)
+        self.assertIs(cfunc(1,b=2), cfunc(1.0,b=2))
+        self.assertIs(cfunc(1,b=2), cfunc(1,b=2.0))
+
+    def test_typed_True(self):
+        """ Verify typed==True. """
+        
+        cfunc = lrucache(typed=True)(self.func)
+        self.assertIsNot(cfunc(1, 2), cfunc(1.0, 2))
+        self.assertIsNot(cfunc(1, 2), cfunc(1, 2.0))
+        # test keywords
+        self.assertIsNot(cfunc(1,b=2), cfunc(1.0,b=2))
+        self.assertIsNot(cfunc(1,b=2), cfunc(1,b=2.0))

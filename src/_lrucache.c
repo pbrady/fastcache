@@ -337,6 +337,7 @@ typedef struct {
   PyObject *fn ; // original function
   PyObject *cache_dict; 
   PyObject *ex_state; 
+  int typed;
   PyObject *cinfo; // named tuple constructor
   Py_ssize_t maxsize, hits, misses;
   clist *root;
@@ -357,17 +358,17 @@ static void cache_dealloc(cacheobject *co)
 static PyObject *
 make_key(cacheobject *co, PyObject *args, PyObject *kw)
 {
-  PyObject *tup, *item, *tpe, *keys, *key;
+  PyObject *tup, *item, *keys, *key;
   Py_ssize_t ex_size = 0;
   Py_ssize_t arg_size = 0;
   Py_ssize_t kw_size = 0;
-  Py_ssize_t i,size;
+  Py_ssize_t i,size,off;
   size_t nbytes;
   hashseq *hs;
   PyListObject *lo;
 
   // determine size of arguments and types
-  if (co->ex_state != NULL && PyList_CheckExact(co->ex_state))
+  if (PyList_Check(co->ex_state))
     ex_size = Py_SIZE(co->ex_state);
   if (args != NULL && PyTuple_CheckExact(args))
     arg_size = PyTuple_GET_SIZE(args);
@@ -379,8 +380,11 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   if( hs == NULL)
     return NULL;
   // total size
-  size = ex_size+2*arg_size+3*kw_size;
-  // cash hashseq to list and initialize
+  if (co->typed)
+    size = ex_size+2*arg_size+3*kw_size;
+  else
+    size = ex_size+arg_size+2*kw_size;
+  // cast hashseq to list and initialize
   lo = (PyListObject *) hs;
   nbytes = size * sizeof(PyObject *);
   lo->ob_item = (PyObject **) PyMem_MALLOC(nbytes);
@@ -399,15 +403,21 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     Py_INCREF(item);
     PyList_SET_ITEM((PyObject *)hs, i, item);
   }
-
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
-    item = PyTuple_GET_ITEM(args,i);
-    tpe = (PyObject *)Py_TYPE(item);
+    item = PyTuple_GET_ITEM(args, i);
     Py_INCREF(item);
-    Py_INCREF(tpe);
-    PyList_SET_ITEM((PyObject *)hs, ex_size+2*i,   item);
-    PyList_SET_ITEM((PyObject *)hs, ex_size+2*i+1, tpe);
+    PyList_SET_ITEM((PyObject *)hs, ex_size+i, item);
+  }
+  off = ex_size + arg_size;
+  // incorporate type
+  if (co->typed){
+    for(i = 0; i < arg_size; i++){
+      item = (PyObject *)Py_TYPE(PyTuple_GET_ITEM(args, i));
+      Py_INCREF(item);
+      PyList_SET_ITEM((PyObject *)hs, off+i, item);
+    }
+    off += arg_size;
   }
   
   // incorporate keyword arguments
@@ -417,19 +427,24 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
       Py_DECREF(hs);
       return NULL;
     }
-
     for(i = 0; i < kw_size; i++){
       key = PyList_GET_ITEM(keys, i);
       item = PyDict_GetItem(kw, key);
-      tpe = (PyObject *)Py_TYPE(item);
       Py_INCREF(key);
       Py_INCREF(item);
-      Py_INCREF(tpe);
-      PyList_SET_ITEM((PyObject *)hs, ex_size+2*arg_size+3*i  , key);
-      PyList_SET_ITEM((PyObject *)hs, ex_size+2*arg_size+3*i+1, item);
-      PyList_SET_ITEM((PyObject *)hs, ex_size+2*arg_size+3*i+2, tpe);
+      PyList_SET_ITEM((PyObject *)hs, off+2*i  , key);
+      PyList_SET_ITEM((PyObject *)hs, off+2*i+1, item);
     }
     Py_DECREF(keys);
+    // type info
+    if (co->typed){
+      for(i = 0; i < kw_size; i++){
+	item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
+	Py_INCREF(item);
+	PyList_SET_ITEM((PyObject *)hs, off+2*kw_size+i, item);
+      }
+    }
+
   }
 
   tup = PyList_AsTuple((PyObject *)hs);
@@ -491,20 +506,9 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   }
   else {
     Py_DECREF(key);
-    //printf("using cached result!\n");
-    // bump link to front of list
-    //printf("result prior to make_first (hit) %ld\n",
-    //	   co->root->next->result->ob_refcnt);
     result = make_first(co->root, (clist *) link);
-    //printf("result after make_first (hit) %ld\n",
-    //	   co->root->next->result->ob_refcnt);
-    //printf(" -- POST --\n");
-    //print_clist(co->root);
     co->hits++;
-#ifdef PRINTDEBUG
-    printf("result prior to return (hit) %ld\n\n",
-    	   co->root->next->result->ob_refcnt);
-#endif
+
     return result;
   }
 }
@@ -604,11 +608,13 @@ typedef struct {
   PyObject_HEAD
   Py_ssize_t maxsize;
   PyObject *state;
+  PyObject *typed;
 } lruobject;
 
 static void lru_dealloc(lruobject *lru)
 {
   Py_CLEAR(lru->state);
+  Py_CLEAR(lru->typed);
   Py_TYPE(lru)->tp_free(lru);
 }
 
@@ -627,7 +633,6 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
     PyErr_SetString(PyExc_TypeError, "Argument must be callable.");
     return NULL;
   }
-
   co = PyObject_New(cacheobject, &cache_type);
   if (co == NULL)
     return NULL;
@@ -670,6 +675,10 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   co->maxsize = lru->maxsize;
   co->hits = 0;
   co->misses = 0;
+  if(lru->typed == Py_True)
+    co->typed = 1;
+  else
+    co->typed = 0;
 
   Py_INCREF(co->fn);
   Py_INCREF(co->ex_state);
@@ -678,24 +687,6 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   
   return (PyObject *)co;
 }
-
-static int
-lru_init(lruobject *lru, PyObject *args, PyObject *kwds)
-{
-
-  if(! PyArg_ParseTuple(args, "nO:lru_init",
-			&lru->maxsize, &lru->state))
-    return -1;
-
-  Py_INCREF(lru->state);
-  return 0;
-}
-
-static PyMemberDef lru_members[] = {
-  {"maxsize", T_PYSSIZET, offsetof(lruobject, maxsize), 0, "maximum size"},
-  {"state", T_OBJECT, offsetof(lruobject, state), 0, "extra state info"},
-  {NULL} /* Sentinel */
-};
 
 static PyTypeObject lru_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -727,14 +718,14 @@ static PyTypeObject lru_type = {
     0,                                  /* tp_iter */
     0,                                  /* tp_iternext */
     0,                                  /* tp_methods */
-    lru_members,                        /* tp_members */
+    0,                                  /* tp_members */
     0,                                  /* tp_getset */
     0,                                  /* tp_base */
     0,                                  /* tp_dict */
     0,                                  /* tp_descr_get */
     0,                                  /* tp_descr_set */
     0,                                  /* tp_dictoffset */
-    (initproc)lru_init,                 /* tp_init */
+    0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     0,                                  /* tp_new */
     0,                                  /* tp_free */
@@ -742,22 +733,37 @@ static PyTypeObject lru_type = {
 
 /* LRU cache decorator */
 PyDoc_STRVAR(lrucache__doc__,
-"lrucache(maxsize=128,state=None)\n\
+"lrucache(maxsize=128, typed=False, state=None)\n\
 \n\
-Least Recently Used Caching mechanism.");
+Least Recently Used Caching mechanism.\n\
+\n\
+If <typed> == False, f(3) == f(3.0).\n\
+<state> must be a list.");
 static PyObject *
 lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 {
   PyObject *state = Py_None;
+  PyObject *typed = Py_False;
   Py_ssize_t maxsize = 128;
-  static char *kwlist[] = {"maxsize", "state"};
+  static char *kwlist[] = {"maxsize", "typed", "state"};
   lruobject *lru;
 
-  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|nO:lrucache",
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|nOO:lrucache",
 				   kwlist,
-				   &maxsize, &state))
+				   &maxsize, &typed, &state))
     return NULL;
   
+  // check type of typed
+  if (typed != Py_False && typed != Py_True){
+    PyErr_SetString(PyExc_TypeError, 
+		    "Argument <typed> must be either True or False.");
+    return NULL;
+  }
+  if (state != Py_None && !PyList_Check(state)){
+    PyErr_SetString(PyExc_TypeError,
+		    "Argument <state> must be a list.");
+    return NULL;
+  }
 
   lru = PyObject_New(lruobject, &lru_type);
   if (lru == NULL)
@@ -765,7 +771,9 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   
   lru->maxsize = maxsize;
   lru->state = state;
+  lru->typed = typed;
   Py_INCREF(lru->state);
+  Py_INCREF(lru->typed);
 
   return (PyObject *) lru;
   
