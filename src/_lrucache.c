@@ -441,6 +441,13 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   hs->hashvalue = PyTuple_Type.tp_hash(tup);
   Py_DECREF(tup);
   
+  // check for unhashable type
+  if (hs->hashvalue == -1){
+    Py_DECREF(hs);
+    PyErr_SetString(PyExc_TypeError, "Function arguments must be hashable");
+    return NULL;
+  }
+
   return (PyObject *)hs;
 }
 
@@ -450,10 +457,9 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   PyObject *key, *result, *link;
 
   key = make_key(co,args,kw);
-  if (key == NULL){
-    //printf("NULL pointer in make_key\n");
-    return PyObject_Call(co->fn, args, kw);
-  }
+  if (key == NULL)
+    return NULL;
+  
 
   // use hashseq as key and check if value has already been
   // computed.  If so, return
