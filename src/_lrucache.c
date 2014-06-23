@@ -487,26 +487,41 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       return NULL;
     }
 
-    if(insert_first(co->root, key, result) < 0){
+    // unbounded cache
+    if (co->maxsize < 0){
+      PyDict_SetItem(co->cache_dict, key, result);
       Py_DECREF(key);
-      Py_DECREF(result);
-      return NULL;
     }
+    // LRU
+    else {
+      
+      if(insert_first(co->root, key, result) < 0){
+	Py_DECREF(key);
+	Py_DECREF(result);
+	return NULL;
+      }
 
-    PyDict_SetItem(co->cache_dict, key, (PyObject *) co->root->next);
-    Py_DECREF(co->root->next);
+      PyDict_SetItem(co->cache_dict, key, (PyObject *) co->root->next);
+      Py_DECREF(co->root->next);
 
-    // if item list is too long, remove last node
-    if (((PyDictObject *)co->cache_dict)->ma_used > co->maxsize)
-      PyDict_DelItem(co->cache_dict,co->root->prev->key);
-
+      // if item list is too long, remove last node
+      if (((PyDictObject *)co->cache_dict)->ma_used > co->maxsize)
+	PyDict_DelItem(co->cache_dict,co->root->prev->key);
+    }
     co->misses++;
 
     return result;
+    
   }
   else {
     Py_DECREF(key);
-    result = make_first(co->root, (clist *) link);
+    if( co->maxsize < 0){
+      result = link;
+      Py_INCREF(result);
+    }
+    else
+      result = make_first(co->root, (clist *) link);
+
     co->hits++;
 
     return result;
@@ -537,8 +552,12 @@ static PyObject *
 cache_info(PyObject *self)
 {
   cacheobject * co = (cacheobject *) self;
-  return PyObject_CallFunction(co->cinfo,"nnnn",co->hits, co->misses, co->maxsize,
-			       ((PyDictObject *)co->cache_dict)->ma_used);
+  if (co->maxsize > 0)
+    return PyObject_CallFunction(co->cinfo,"nnnn",co->hits, co->misses, co->maxsize,
+				 ((PyDictObject *)co->cache_dict)->ma_used);
+  else
+    return PyObject_CallFunction(co->cinfo,"nnOn",co->hits, co->misses, Py_None,
+				 ((PyDictObject *)co->cache_dict)->ma_used);
 }
 
 
@@ -608,13 +627,12 @@ typedef struct {
   PyObject_HEAD
   Py_ssize_t maxsize;
   PyObject *state;
-  PyObject *typed;
+  int typed;
 } lruobject;
 
 static void lru_dealloc(lruobject *lru)
 {
   Py_CLEAR(lru->state);
-  Py_CLEAR(lru->typed);
   Py_TYPE(lru)->tp_free(lru);
 }
 
@@ -675,10 +693,7 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   co->maxsize = lru->maxsize;
   co->hits = 0;
   co->misses = 0;
-  if(lru->typed == Py_True)
-    co->typed = 1;
-  else
-    co->typed = 0;
+  co->typed = lru->typed;
 
   Py_INCREF(co->fn);
   Py_INCREF(co->ex_state);
@@ -743,22 +758,33 @@ static PyObject *
 lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 {
   PyObject *state = Py_None;
-  PyObject *typed = Py_False;
+  int typed = 0;
+  PyObject *omaxsize = Py_False;
   Py_ssize_t maxsize = 128;
   static char *kwlist[] = {"maxsize", "typed", "state"};
   lruobject *lru;
 
-  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|nOO:lrucache",
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OpO:lrucache",
 				   kwlist,
-				   &maxsize, &typed, &state))
+				   &omaxsize, &typed, &state))
     return NULL;
   
-  // check type of typed
-  if (typed != Py_False && typed != Py_True){
-    PyErr_SetString(PyExc_TypeError, 
-		    "Argument <typed> must be either True or False.");
-    return NULL;
+  if (omaxsize != Py_False){
+    if (omaxsize == Py_None)
+      maxsize = -1;
+    else {
+      if( ! PyLong_Check(omaxsize)){
+	PyErr_SetString(PyExc_TypeError,
+			"Argument <maxsize> must be an int.");
+	return NULL;
+      }
+      maxsize = PyLong_AsSsize_t(omaxsize);
+      if (maxsize <= 0)
+	maxsize = -1;
+    }
   }
+    
+  // ensure state is a list
   if (state != Py_None && !PyList_Check(state)){
     PyErr_SetString(PyExc_TypeError,
 		    "Argument <state> must be a list.");
@@ -773,7 +799,6 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   lru->state = state;
   lru->typed = typed;
   Py_INCREF(lru->state);
-  Py_INCREF(lru->typed);
 
   return (PyObject *) lru;
   
@@ -790,7 +815,7 @@ static PyMethodDef lrucachemethods[] = {
 static PyModuleDef lrucachemodule = {
   PyModuleDef_HEAD_INIT,
   "_lrucache",
-  "Really Lrucache module",
+  "Least Recently Used cache",
   -1,
   lrucachemethods, 
   NULL, NULL, NULL, NULL

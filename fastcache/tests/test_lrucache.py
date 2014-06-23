@@ -78,14 +78,6 @@ class TestLRUCache(unittest.TestCase):
         cache = lrucache(state=-1)
         self.assertRaises(TypeError, cache, self.func)
 
-    def test_typed_type(self):
-        """ Typed must be a bool. """
-        
-        cache = lrucache(typed=None)
-        self.assertRaises(TypeError, cache, self.func)
-        cache = lrucache(typed=5)
-        self.assertRaises(TypeError, cache, self.func)
-
     def test_typed_False(self):
         """ Verify typed==False. """
         

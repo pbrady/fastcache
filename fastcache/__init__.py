@@ -1,10 +1,13 @@
 """ Wrapper for C implementation of LRU caching. """
 
-from ._lrucache import lrucache as _ccache
+from ._lrucache import lrucache as clrucache
 from functools import wraps
 
 def lrucache(maxsize=256, typed=False, state=None):
     """Least-recently-used cache decorator.
+
+    If *maxsize* is set to None, the LRU features are disabled and the cache
+    can grow without bound.
 
     If *typed* is True, arguments of different types will be cached separately.
     For example, f(3.0) and f(3) will be treated as distinct calls with
@@ -23,7 +26,7 @@ def lrucache(maxsize=256, typed=False, state=None):
 
     """
     def func_wrapper(func):
-        _cached_func = _ccache(maxsize, typed, state)(func)
+        _cached_func = clrucache(maxsize, typed, state)(func)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
