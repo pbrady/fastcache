@@ -343,6 +343,16 @@ typedef struct {
   clist *root;
 } cacheobject ;
 
+/* Bind a function to an object */
+static PyObject *
+cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
+{
+    if (obj == Py_None || obj == NULL) {
+        Py_INCREF(func);
+        return func;
+    }
+    return PyMethod_New(func, obj);
+}
 
 static void cache_dealloc(cacheobject *co)
 {
@@ -606,7 +616,7 @@ static PyTypeObject cache_type = {
     0,                                  /* tp_getset */
     0,                                  /* tp_base */
     0,                                  /* tp_dict */
-    0,                                  /* tp_descr_get */
+    cache_descr_get,                    /* tp_descr_get */
     0,                                  /* tp_descr_set */
     0,                                  /* tp_dictoffset */
     0,                                  /* tp_init */
