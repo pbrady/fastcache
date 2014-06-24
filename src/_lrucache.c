@@ -500,14 +500,9 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   }
   // set hashvalue
   hs->hashvalue = PyTuple_Type.tp_hash(tup);
+  if( hs->hashvalue == -1)
+    PyErr_Clear();
   Py_DECREF(tup);
-  
-  // check for unhashable type
-  if (hs->hashvalue == -1){
-    Py_DECREF(hs);
-    PyErr_SetString(PyExc_TypeError, "Function arguments must be hashable");
-    return NULL;
-  }
 
   return (PyObject *)hs;
 }
@@ -520,7 +515,22 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   key = make_key(co,args,kw);
   if (key == NULL)
     return NULL;
-  
+
+  // check for unhashable type
+  if ( ((hashseq *)key)->hashvalue == -1){
+    Py_DECREF(key);
+
+    // try to issue warning
+    if( PyErr_WarnEx(PyExc_UserWarning, 
+		     "Unhashable arguments cannot be cached",1) < 0){
+      // warning becomes exception
+      PyErr_SetString(PyExc_TypeError, "Cached function arguments must be hashable");
+      return NULL;
+    }
+    co->misses++;
+    return PyObject_Call(co->fn, args, kw);
+  }
+
 
   // use hashseq as key and check if value has already been
   // computed.  If so, return

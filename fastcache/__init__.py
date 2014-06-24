@@ -1,7 +1,29 @@
-""" Wrapper for C implementation of LRU caching. """
+""" C implementation of LRU caching. 
+
+Provides 2 LRU caching function decorators:
+
+clrucache - built-in (faster)
+          >>> from fastcache import clrucache
+          >>> @clrucache(maxsize=256,typed=False,state=None)
+          ... def f(a, b):
+          ...     return (a, )+(b, )
+          ...
+          >>> type(f)
+          >>> <class '_lrucache.cache'>
+
+lrucache  - python wrapper around clrucache (slower)
+          >>> from fastcache import lrucache
+          >>> @lrucache(maxsize=256,typed=False,state=None)
+          ... def f(a, b):
+          ...     return (a, )+(b, )
+          ...
+          >>> type(f)
+          >>> <class 'function'>
+"""
 
 from ._lrucache import lrucache as clrucache
 from functools import wraps
+import unittest
 
 def lrucache(maxsize=256, typed=False, state=None):
     """Least-recently-used cache decorator.
@@ -38,3 +60,4 @@ def lrucache(maxsize=256, typed=False, state=None):
         return wrapper
 
     return func_wrapper
+    

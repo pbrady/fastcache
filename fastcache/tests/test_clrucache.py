@@ -1,8 +1,8 @@
 import unittest
-from fastcache import lrucache
+from fastcache import clrucache as lrucache
 from itertools import count
 
-class TestLRUCache(unittest.TestCase):
+class TestCLRUCache(unittest.TestCase):
     """ Tests for lrucache. """
 
     def setUp(self):
@@ -78,10 +78,8 @@ class TestLRUCache(unittest.TestCase):
     def test_state_type(self):
         """ State must be a list. """
 
-        cache = lrucache(state=(1))
-        self.assertRaises(TypeError, cache, self.func)
-        cache = lrucache(state=-1)
-        self.assertRaises(TypeError, cache, self.func)
+        self.assertRaises(TypeError, lrucache, state=(1))
+        self.assertRaises(TypeError, lrucache, state=-1)
 
     def test_typed_False(self):
         """ Verify typed==False. """
