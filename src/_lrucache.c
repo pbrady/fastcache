@@ -335,6 +335,8 @@ make_first(clist *root, clist *node){
 typedef struct {
   PyObject_HEAD
   PyObject *fn ; // original function
+  PyObject *func_module, *func_name, *func_qualname, *func_annotations;
+  PyObject *func_dict;
   PyObject *cache_dict; 
   PyObject *ex_state; 
   int typed;
@@ -342,6 +344,35 @@ typedef struct {
   Py_ssize_t maxsize, hits, misses;
   clist *root;
 } cacheobject ;
+
+#define OFF(x) offsetof(cacheobject, x)
+
+// attributes from wrapped function
+static PyMemberDef cache_memberlist[] = {
+  {"__wrapped__", T_OBJECT, OFF(fn), RESTRICTED | READONLY},
+  {"__module__",  T_OBJECT, OFF(func_module), RESTRICTED | READONLY},
+  {"__name__",    T_OBJECT, OFF(func_name), RESTRICTED | READONLY},
+  {"__qualname__",T_OBJECT, OFF(func_qualname), RESTRICTED | READONLY},
+  {"__annotations__", T_OBJECT, OFF(func_annotations), RESTRICTED | READONLY},
+  {"__dict__", T_OBJECT, OFF(func_dict), 0},
+  {NULL} /* Sentinel */
+};
+// getsetters from wrapped function
+static PyObject *
+cache_get_doc(cacheobject * co, void *closure)
+{
+  PyFunctionObject * fn = (PyFunctionObject *) co->fn;
+  if (fn->func_doc == NULL)
+    Py_RETURN_NONE;
+  
+  return Py_INCREF(fn->func_doc), fn->func_doc;
+}
+
+static PyGetSetDef cache_getset[] = {
+  {"__doc__", (getter)cache_get_doc, NULL, NULL, NULL},
+  {NULL} /* Sentinel */
+};
+
 
 /* Bind a function to an object */
 static PyObject *
@@ -357,6 +388,11 @@ cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
 static void cache_dealloc(cacheobject *co)
 {
   Py_CLEAR(co->fn);
+  Py_CLEAR(co->func_module);
+  Py_CLEAR(co->func_name);
+  Py_CLEAR(co->func_qualname);
+  Py_CLEAR(co->func_annotations);
+  Py_CLEAR(co->func_dict);
   Py_CLEAR(co->cache_dict);
   Py_CLEAR(co->ex_state);
   Py_CLEAR(co->cinfo);
@@ -611,9 +647,9 @@ static PyTypeObject cache_type = {
     0,                                  /* tp_weaklistoffset */
     0,                                  /* tp_iter */
     0,                                  /* tp_iternext */
-    cache_methods,                                  /* tp_methods */
-    0,                                  /* tp_members */
-    0,                                  /* tp_getset */
+    cache_methods,                      /* tp_methods */
+    cache_memberlist,                   /* tp_members */
+    cache_getset,                       /* tp_getset */
     0,                                  /* tp_base */
     0,                                  /* tp_dict */
     cache_descr_get,                    /* tp_descr_get */
@@ -644,6 +680,15 @@ static void lru_dealloc(lruobject *lru)
 {
   Py_CLEAR(lru->state);
   Py_TYPE(lru)->tp_free(lru);
+}
+
+static PyObject *
+get_func_attr(PyObject *fo, const char *name)
+{
+  PyObject *attr = PyObject_GetAttrString(fo, name);
+  if (attr == NULL)
+    Py_RETURN_NONE;
+  return attr;
 }
 
 // simple caller which prints some business and returns the arg if
@@ -692,24 +737,31 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
     return NULL;
   }
 
-  // start with self-referencing root node
-  co->root->prev = co->root;
-  co->root->next = co->root;
-  co->root->key = Py_None;
-  co->root->result = Py_None;
+  co->func_dict = get_func_attr(fo, "__dict__");
 
-  co->fn = fo;
+  co->fn = fo; // __wrapped__
+  Py_INCREF(co->fn); 
+
+  co->func_module = get_func_attr(fo, "__module__");
+  co->func_annotations = get_func_attr(fo, "__annotations__");
+  co->func_name = get_func_attr(fo, "__name__");
+  co->func_qualname = get_func_attr(fo, "__qualname__");
+
   co->ex_state = lru->state;
+  Py_INCREF(co->ex_state);
   co->maxsize = lru->maxsize;
   co->hits = 0;
   co->misses = 0;
   co->typed = lru->typed;
 
-  Py_INCREF(co->fn);
-  Py_INCREF(co->ex_state);
+  // start with self-referencing root node
+  co->root->prev = co->root;
+  co->root->next = co->root;
+  co->root->key = Py_None;
+  co->root->result = Py_None;
   Py_INCREF(co->root->key);
   Py_INCREF(co->root->result);  
-  
+
   return (PyObject *)co;
 }
 
