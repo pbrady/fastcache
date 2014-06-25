@@ -3,17 +3,17 @@
 Provides 2 LRU caching function decorators:
 
 clrucache - built-in (faster)
-          >>> from fastcache import clrucache
-          >>> @clrucache(maxsize=256,typed=False,state=None)
+          >>> from fastcache import clru_cache
+          >>> @clru_cache(maxsize=256,typed=False,state=None)
           ... def f(a, b):
           ...     return (a, )+(b, )
           ...
           >>> type(f)
           >>> <class '_lrucache.cache'>
 
-lrucache  - python wrapper around clrucache (slower)
-          >>> from fastcache import lrucache
-          >>> @lrucache(maxsize=256,typed=False,state=None)
+lrucache  - python wrapper around clru_cache (slower)
+          >>> from fastcache import lru_cache
+          >>> @lru_cache(maxsize=256,typed=False,state=None)
           ... def f(a, b):
           ...     return (a, )+(b, )
           ...
@@ -21,11 +21,10 @@ lrucache  - python wrapper around clrucache (slower)
           >>> <class 'function'>
 """
 
-from ._lrucache import lrucache as clrucache
+from ._lrucache import lrucache as clru_cache
 from functools import wraps
-import unittest
 
-def lrucache(maxsize=256, typed=False, state=None):
+def lru_cache(maxsize=256, typed=False, state=None):
     """Least-recently-used cache decorator.
 
     If *maxsize* is set to None, the LRU features are disabled and the cache
@@ -48,7 +47,7 @@ def lrucache(maxsize=256, typed=False, state=None):
 
     """
     def func_wrapper(func):
-        _cached_func = clrucache(maxsize, typed, state)(func)
+        _cached_func = clru_cache(maxsize, typed, state)(func)
 
         @wraps(func)
         def wrapper(*args, **kwargs):

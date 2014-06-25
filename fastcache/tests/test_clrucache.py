@@ -1,9 +1,9 @@
 import unittest
-from fastcache import clrucache as lrucache
+from fastcache import clru_cache as lru_cache
 from itertools import count
 
-class TestCLRUCache(unittest.TestCase):
-    """ Tests for lrucache. """
+class TestCLru_Cache(unittest.TestCase):
+    """ Tests for lru_cache. """
 
     def setUp(self):
 
@@ -24,7 +24,7 @@ class TestCLRUCache(unittest.TestCase):
         def tfunc(a, b):
             """test function docstring."""
             return a + b
-        cfunc = lrucache()(tfunc)
+        cfunc = lru_cache()(tfunc)
         self.assertEqual(cfunc.__doc__,
                          tfunc.__doc__)
 
@@ -43,7 +43,7 @@ class TestCLRUCache(unittest.TestCase):
             else:
                 return 2*a-10*b
 
-        cfunc = lrucache(maxsize=100,state=cat_tuples)(tfunc)
+        cfunc = lru_cache(maxsize=100,state=cat_tuples)(tfunc)
 
         for i, j in self.arg_gen(max=75, repeat=5):
             self.assertEqual(cfunc(i, j), tfunc(i, j))
@@ -60,7 +60,7 @@ class TestCLRUCache(unittest.TestCase):
         def tfunc(a, b, c):
             return (a-1, 2*c) + (10*b-1, a*b, a*b+c)
 
-        cfunc = lrucache(maxsize=2000)(tfunc)
+        cfunc = lru_cache(maxsize=2000)(tfunc)
 
         for i, j in self.arg_gen(max=1500, repeat=5):
             self.assertEqual(cfunc(i, j, c=i-j), tfunc(i, j, c=i-j))
@@ -68,7 +68,7 @@ class TestCLRUCache(unittest.TestCase):
     def test_hashable_args(self):
         """ Function arguments must be hashable. """
 
-        @lrucache()
+        @lru_cache()
         def f(a, b):
             return (a, ) + (b, )
 
@@ -78,13 +78,13 @@ class TestCLRUCache(unittest.TestCase):
     def test_state_type(self):
         """ State must be a list. """
 
-        self.assertRaises(TypeError, lrucache, state=(1))
-        self.assertRaises(TypeError, lrucache, state=-1)
+        self.assertRaises(TypeError, lru_cache, state=(1))
+        self.assertRaises(TypeError, lru_cache, state=-1)
 
     def test_typed_False(self):
         """ Verify typed==False. """
 
-        cfunc = lrucache(typed=False)(self.func)
+        cfunc = lru_cache(typed=False)(self.func)
         # initialize cache with integer args
         cfunc(1,2)
         self.assertIs(cfunc(1, 2), cfunc(1.0, 2))
@@ -97,7 +97,7 @@ class TestCLRUCache(unittest.TestCase):
     def test_typed_True(self):
         """ Verify typed==True. """
 
-        cfunc = lrucache(typed=True)(self.func)
+        cfunc = lru_cache(typed=True)(self.func)
         self.assertIsNot(cfunc(1, 2), cfunc(1.0, 2))
         self.assertIsNot(cfunc(1, 2), cfunc(1, 2.0))
         # test keywords
