@@ -22,7 +22,7 @@ Test
 
 `py.test --pyargs fastcache`
 
-Traivs CI status :  [![alt text][2]][1]
+Travis CI status :  [![alt text][2]][1]
 
 [2]: https://travis-ci.org/pbrady/fastcache.svg?branch=master (Travis build status)
 [1]: http://travis-ci.org/pbrady/fastcache
