@@ -7,7 +7,15 @@ Install
 -------
 Tested on Python >= 3.3
 
-`python setup.py install`
+Via pip: 
+
+    pip install fastcache
+
+Manually : 
+
+    git clone https://github.com/pbrady/fastcache.git
+    cd fastcache
+    python setup.py install
 
 Test
 ----
