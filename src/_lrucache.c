@@ -221,11 +221,11 @@ typedef struct clist{
 static void 
 clist_dealloc(clist *co)
 {
-  Py_XDECREF(co->key);
-  Py_XDECREF(co->result);
-
   clist *prev = co->prev;
   clist *next = co->next;
+
+  Py_XDECREF(co->key);
+  Py_XDECREF(co->result);
 
   if(prev == co){
     // remove self referencing node
@@ -706,7 +706,7 @@ get_func_attr(PyObject *fo, const char *name)
 static PyObject *
 lru_call(lruobject *lru, PyObject *args, PyObject *kw)
 {
-  PyObject *fo;
+  PyObject *fo, *mod, *nt;
   cacheobject *co;
 
   if(! PyArg_ParseTuple(args, "O", &fo))
@@ -731,12 +731,12 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   }
 
   // get namedtuple for cache_info()
-  PyObject *mod = PyImport_ImportModule("collections");
+  mod = PyImport_ImportModule("collections");
   if (mod == NULL){
     Py_DECREF(co);
     return NULL;
   }
-  PyObject *nt = PyObject_GetAttrString(mod, "namedtuple");
+  nt = PyObject_GetAttrString(mod, "namedtuple");
   if (nt == NULL){
     Py_DECREF(co);
     return NULL;
