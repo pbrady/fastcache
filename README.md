@@ -1,11 +1,11 @@
 fastcache
 =========
 
-C implementation of Python lru_cache 
+C implementation of Python 3 lru_cache 
 
 Install
 -------
-Only tested on Python 3.4
+Tested on Python >= 3.3
 
 `python setup.py install`
 
@@ -14,9 +14,7 @@ Test
 
 `py.test --pyargs fastcache`
 
-Traivs CI status :
-
-[![alt text][2]][1]
+Traivs CI status :  [![alt text][2]][1]
 
 [2]: https://travis-ci.org/pbrady/fastcache.svg?branch=master (Travis build status)
 [1]: http://travis-ci.org/pbrady/fastcache
@@ -24,8 +22,8 @@ Traivs CI status :
 Use
 ---
 
-    >>> from fastcache import clrucache
-    >>> @clrucache(maxsize=256)
+    >>> from fastcache import clru_cache
+    >>> @clru_cache(maxsize=256)
     >>> def f(a, b):
     ...     """Test function."""
     ...     return (a, ) + (b, )
