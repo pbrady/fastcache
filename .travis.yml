@@ -3,5 +3,7 @@ python:
   - 3.3
   - 3.4
 
-script: bin/run_travis.sh
+install: python setup.py install
+
+script: bash bin/test_travis.sh
 

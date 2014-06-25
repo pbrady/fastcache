@@ -9,6 +9,16 @@ Only tested on Python 3.4
 
 `python setup.py install`
 
+Test
+----
+
+`py.test --pyargs fastcache`
+
+Traivs CI status :
+
+.. image:: https://travis-ci.org/pbrady/fastcache.svg?branch=master
+    :target: http://travis-ci.org/pbrady/fastache
+
 Use
 ---
 

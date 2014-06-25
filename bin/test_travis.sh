@@ -7,4 +7,4 @@ set -x
 
 mkdir empty
 cd empty
-py.test
+py.test --pyargs fastcache
