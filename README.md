@@ -16,8 +16,10 @@ Test
 
 Traivs CI status :
 
-.. image:: https://travis-ci.org/pbrady/fastcache.svg?branch=master
-    :target: http://travis-ci.org/pbrady/fastache
+[![alt text][2]][1]
+
+[2]: https://travis-ci.org/pbrady/fastcache.svg?branch=master (Travis build status)
+[1]: http://travis-ci.org/pbrady/fastache
 
 Use
 ---
