@@ -19,7 +19,7 @@ Traivs CI status :
 [![alt text][2]][1]
 
 [2]: https://travis-ci.org/pbrady/fastcache.svg?branch=master (Travis build status)
-[1]: http://travis-ci.org/pbrady/fastache
+[1]: http://travis-ci.org/pbrady/fastcache
 
 Use
 ---
