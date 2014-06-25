@@ -1,8 +1,9 @@
 language: python
 python:
+  - 3.2
   - 3.3
   - 3.4
-
+  
 install: python setup.py install
 
 script: bash bin/test_travis.sh
