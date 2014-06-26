@@ -1,6 +1,11 @@
 #include <Python.h>
 #include "structmember.h"
 
+#ifndef SIZEOF_PY_HASH_T
+#define _PY2
+typedef long Py_hash_t;
+#endif
+
 /* hashseq -- internal *****************************************/
 
 typedef struct {
@@ -382,7 +387,11 @@ cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
         Py_INCREF(func);
         return func;
     }
+#ifdef _PY2
+    return PyMethod_New(func, obj, type);
+#else
     return PyMethod_New(func, obj);
+#endif
 }
 
 static void cache_dealloc(cacheobject *co)
@@ -696,10 +705,14 @@ static void lru_dealloc(lruobject *lru)
 static PyObject *
 get_func_attr(PyObject *fo, const char *name)
 {
-  PyObject *attr = PyObject_GetAttrString(fo, name);
-  if (attr == NULL)
+  if( !PyObject_HasAttrString(fo,name))
     Py_RETURN_NONE;
-  return attr;
+  else{
+    PyObject *attr = PyObject_GetAttrString(fo, name);
+    if (attr == NULL)
+      return NULL;
+    return attr;
+  }
 }
 
 // simple caller which prints some business and returns the arg if
@@ -884,7 +897,7 @@ static PyMethodDef lrucachemethods[] = {
   {NULL, NULL} /* sentinel */
 };
 
-
+#ifndef _PY2
 static PyModuleDef lrucachemodule = {
   PyModuleDef_HEAD_INIT,
   "_lrucache",
@@ -893,36 +906,70 @@ static PyModuleDef lrucachemodule = {
   lrucachemethods, 
   NULL, NULL, NULL, NULL
 };
+#endif
 
+#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
+#define PyMODINIT_FUNC void
+#endif
 PyMODINIT_FUNC
+#ifdef _PY2
+init_lrucache(void)
+#else
 PyInit__lrucache(void)
+#endif
 {
   PyObject *m;
 
   lru_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&lru_type) < 0)
+  if (PyType_Ready(&lru_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
-
+#endif
+  }
   cache_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&cache_type) < 0)
+  if (PyType_Ready(&cache_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
   hashseq_type.tp_base = &PyList_Type;
-  if (PyType_Ready(&hashseq_type) < 0)
+  if (PyType_Ready(&hashseq_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
   clist_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&clist_type) < 0)
+  if (PyType_Ready(&clist_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
+#ifdef _PY2
+  m = Py_InitModule3("_lrucache", lrucachemethods,
+                       "Least recently used cache.");
+#else
   m = PyModule_Create(&lrucachemodule);
+
   if (m == NULL)
     return NULL;
-
+#endif
   Py_INCREF(&lru_type);
   Py_INCREF(&cache_type);
   Py_INCREF(&hashseq_type);
   Py_INCREF(&clist_type);
 
+#ifndef _PY2
   return m;
+#endif
 }
