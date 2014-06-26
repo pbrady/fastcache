@@ -161,7 +161,7 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
 
 
 static PyTypeObject hashseq_type = {
-  PyObject_HEAD_INIT(NULL)
+  PyVarObject_HEAD_INIT(NULL, 0)
   "_lrucache.hashseq",          /* tp_name */
   sizeof(hashseq),              /* tp_basicsize */
   0,                            /* tp_itemsize */
@@ -246,7 +246,7 @@ clist_dealloc(clist *co)
 }
 
 static PyTypeObject clist_type = {
-  PyObject_HEAD_INIT(NULL)
+  PyVarObject_HEAD_INIT(NULL, 0)
   "_lrucache.clist",   /* tp_name */
   sizeof(clist),       /* tp_basicsize */
   0,                       /* tp_itemsize */
@@ -542,15 +542,16 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       Py_DECREF(key);
       return NULL;
     }
-
+    // no cache
+    if (co->maxsize == 0) 
+      Py_DECREF(key);
     // unbounded cache
-    if (co->maxsize < 0){
+    else if (co->maxsize < 0){
       PyDict_SetItem(co->cache_dict, key, result);
       Py_DECREF(key);
-    }
+      }
     // LRU
     else {
-      
       if(insert_first(co->root, key, result) < 0){
 	Py_DECREF(key);
 	Py_DECREF(result);
@@ -608,7 +609,7 @@ static PyObject *
 cache_info(PyObject *self)
 {
   cacheobject * co = (cacheobject *) self;
-  if (co->maxsize > 0)
+  if (co->maxsize >= 0)
     return PyObject_CallFunction(co->cinfo,"nnnn",co->hits, co->misses, co->maxsize,
 				 ((PyDictObject *)co->cache_dict)->ma_used);
   else
@@ -851,7 +852,7 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 	return NULL;
       }
       maxsize = PyLong_AsSsize_t(omaxsize);
-      if (maxsize <= 0)
+      if (maxsize < 0)
 	maxsize = -1;
     }
   }
