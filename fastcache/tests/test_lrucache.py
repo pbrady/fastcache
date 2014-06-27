@@ -10,7 +10,8 @@ class TestLru_Cache(unittest.TestCase):
         def arg_gen(min=1, max=100, repeat=3):
             for i in range(min, max):
                 for r in range(repeat):
-                    yield from zip(range(i), count(i, -1))
+                    for j, k in zip(range(i), count(i, -1)):
+                        yield j, k
 
         def func(a, b):
             return a+b

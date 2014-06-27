@@ -2,23 +2,23 @@
 
 Provides 2 LRU caching function decorators:
 
-clrucache - built-in (faster)
-          >>> from fastcache import clru_cache
-          >>> @clru_cache(maxsize=256,typed=False,state=None)
-          ... def f(a, b):
-          ...     return (a, )+(b, )
-          ...
-          >>> type(f)
-          >>> <class '_lrucache.cache'>
+clru_cache - built-in (faster)
+           >>> from fastcache import clru_cache
+           >>> @clru_cache(maxsize=256,typed=False,state=None)
+           ... def f(a, b):
+           ...     return (a, )+(b, )
+           ...
+           >>> type(f)
+           >>> <class '_lrucache.cache'>
 
-lrucache  - python wrapper around clru_cache (slower)
-          >>> from fastcache import lru_cache
-          >>> @lru_cache(maxsize=256,typed=False,state=None)
-          ... def f(a, b):
-          ...     return (a, )+(b, )
-          ...
-          >>> type(f)
-          >>> <class 'function'>
+lru_cache  - python wrapper around clru_cache (slower)
+           >>> from fastcache import lru_cache
+           >>> @lru_cache(maxsize=256,typed=False,state=None)
+           ... def f(a, b):
+           ...     return (a, )+(b, )
+           ...
+           >>> type(f)
+           >>> <class 'function'>
 """
 
 from ._lrucache import lrucache as clru_cache

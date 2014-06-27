@@ -849,15 +849,31 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   Py_ssize_t maxsize = 128;
   static char *kwlist[] = {"maxsize", "typed", "state"};
   lruobject *lru;
-
+#ifdef _PY2
+  PyObject *otyped = Py_False;
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OOO:lrucache",
+				   kwlist,
+				   &omaxsize, &otyped, &state))
+    return NULL;
+  typed = PyObject_IsTrue(otyped);
+  if (typed < -1)
+    return NULL;
+#else
   if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OpO:lrucache",
 				   kwlist,
 				   &omaxsize, &typed, &state))
     return NULL;
-  
+#endif
   if (omaxsize != Py_False){
     if (omaxsize == Py_None)
       maxsize = -1;
+#ifdef _PY2
+    else if (PyInt_Check(omaxsize)){
+      maxsize = PyInt_AsSsize_t(omaxsize);
+      if (maxsize < 0)
+	maxsize = -1;
+    }
+#endif
     else {
       if( ! PyLong_Check(omaxsize)){
 	PyErr_SetString(PyExc_TypeError,

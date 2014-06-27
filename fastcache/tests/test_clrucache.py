@@ -10,7 +10,8 @@ class TestCLru_Cache(unittest.TestCase):
         def arg_gen(min=1, max=100, repeat=3):
             for i in range(min, max):
                 for r in range(repeat):
-                    yield from zip(range(i), count(i, -1))
+                    for j, k in zip(range(i), count(i, -1)):
+                        yield j, k
 
         def func(a, b):
             return a+b
@@ -72,7 +73,11 @@ class TestCLru_Cache(unittest.TestCase):
         def f(a, b):
             return (a, ) + (b, )
 
-        with self.assertWarns(UserWarning) as cm:
+        if hasattr(self, 'assertWarns'):
+            with self.assertWarns(UserWarning) as cm:
+                self.assertEqual(f([1], 2), f.__wrapped__([1], 2))
+        else:
+            #with self.assertRaises(UserWarning) as cm:
             self.assertEqual(f([1], 2), f.__wrapped__([1], 2))
 
     def test_state_type(self):
