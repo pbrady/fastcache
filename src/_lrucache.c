@@ -6,6 +6,10 @@
 typedef long Py_hash_t;
 #endif
 
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 2
+#define _PY32
+#endif
+
 /* hashseq -- internal *****************************************/
 
 typedef struct {
@@ -849,7 +853,7 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   Py_ssize_t maxsize = 128;
   static char *kwlist[] = {"maxsize", "typed", "state"};
   lruobject *lru;
-#ifdef _PY2
+#if defined(_PY2) || defined (_PY32)
   PyObject *otyped = Py_False;
   if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OOO:lrucache",
 				   kwlist,
