@@ -1,7 +1,7 @@
 #include <Python.h>
 #include "structmember.h"
 
-#ifndef SIZEOF_PY_HASH_T
+#if PY_MAJOR_VERSION == 2
 #define _PY2
 typedef long Py_hash_t;
 #endif
