@@ -1,11 +1,10 @@
 fastcache
 =========
 
-C implementation of Python 3 lru_cache 
+C implementation of Python 3 lru_cache for Python 2.6, 2.7, 3.2, 3.3, 3.4 
 
 Install
 -------
-Tested on Python >= 3.3
 
 Via pip: 
 
@@ -26,6 +25,8 @@ Travis CI status :  [![alt text][2]][1]
 
 [2]: https://travis-ci.org/pbrady/fastcache.svg?branch=master (Travis build status)
 [1]: http://travis-ci.org/pbrady/fastcache
+
+Tests include the official suite of tests from Python standard library for functools.lru_cache
 
 Use
 ---
