@@ -1,6 +1,15 @@
 #include <Python.h>
 #include "structmember.h"
 
+#if PY_MAJOR_VERSION == 2
+#define _PY2
+typedef long Py_hash_t;
+#endif
+
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 2
+#define _PY32
+#endif
+
 /* hashseq -- internal *****************************************/
 
 typedef struct {
@@ -382,7 +391,11 @@ cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
         Py_INCREF(func);
         return func;
     }
+#ifdef _PY2
+    return PyMethod_New(func, obj, type);
+#else
     return PyMethod_New(func, obj);
+#endif
 }
 
 static void cache_dealloc(cacheobject *co)
@@ -696,10 +709,14 @@ static void lru_dealloc(lruobject *lru)
 static PyObject *
 get_func_attr(PyObject *fo, const char *name)
 {
-  PyObject *attr = PyObject_GetAttrString(fo, name);
-  if (attr == NULL)
+  if( !PyObject_HasAttrString(fo,name))
     Py_RETURN_NONE;
-  return attr;
+  else{
+    PyObject *attr = PyObject_GetAttrString(fo, name);
+    if (attr == NULL)
+      return NULL;
+    return attr;
+  }
 }
 
 // simple caller which prints some business and returns the arg if
@@ -836,15 +853,31 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   Py_ssize_t maxsize = 128;
   static char *kwlist[] = {"maxsize", "typed", "state"};
   lruobject *lru;
-
+#if defined(_PY2) || defined (_PY32)
+  PyObject *otyped = Py_False;
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OOO:lrucache",
+				   kwlist,
+				   &omaxsize, &otyped, &state))
+    return NULL;
+  typed = PyObject_IsTrue(otyped);
+  if (typed < -1)
+    return NULL;
+#else
   if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OpO:lrucache",
 				   kwlist,
 				   &omaxsize, &typed, &state))
     return NULL;
-  
+#endif
   if (omaxsize != Py_False){
     if (omaxsize == Py_None)
       maxsize = -1;
+#ifdef _PY2
+    else if (PyInt_Check(omaxsize)){
+      maxsize = PyInt_AsSsize_t(omaxsize);
+      if (maxsize < 0)
+	maxsize = -1;
+    }
+#endif
     else {
       if( ! PyLong_Check(omaxsize)){
 	PyErr_SetString(PyExc_TypeError,
@@ -884,7 +917,7 @@ static PyMethodDef lrucachemethods[] = {
   {NULL, NULL} /* sentinel */
 };
 
-
+#ifndef _PY2
 static PyModuleDef lrucachemodule = {
   PyModuleDef_HEAD_INIT,
   "_lrucache",
@@ -893,36 +926,70 @@ static PyModuleDef lrucachemodule = {
   lrucachemethods, 
   NULL, NULL, NULL, NULL
 };
+#endif
 
+#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
+#define PyMODINIT_FUNC void
+#endif
 PyMODINIT_FUNC
+#ifdef _PY2
+init_lrucache(void)
+#else
 PyInit__lrucache(void)
+#endif
 {
   PyObject *m;
 
   lru_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&lru_type) < 0)
+  if (PyType_Ready(&lru_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
-
+#endif
+  }
   cache_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&cache_type) < 0)
+  if (PyType_Ready(&cache_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
   hashseq_type.tp_base = &PyList_Type;
-  if (PyType_Ready(&hashseq_type) < 0)
+  if (PyType_Ready(&hashseq_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
   clist_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&clist_type) < 0)
+  if (PyType_Ready(&clist_type) < 0){
+#ifdef _PY2
+    return;
+#else
     return NULL;
+#endif
+  }
 
+#ifdef _PY2
+  m = Py_InitModule3("_lrucache", lrucachemethods,
+                       "Least recently used cache.");
+#else
   m = PyModule_Create(&lrucachemodule);
+
   if (m == NULL)
     return NULL;
-
+#endif
   Py_INCREF(&lru_type);
   Py_INCREF(&cache_type);
   Py_INCREF(&hashseq_type);
   Py_INCREF(&clist_type);
 
+#ifndef _PY2
   return m;
+#endif
 }

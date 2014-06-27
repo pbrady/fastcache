@@ -6,11 +6,15 @@ from itertools import permutations
 import pickle
 from random import choice
 import sys
-from test import support
 import unittest
-from weakref import proxy
 import fastcache
 import functools
+
+try:
+    from functools import _CacheInfo
+except ImportError:
+    _CacheInfo = collections.namedtuple("CacheInfo", 
+                    ["hits", "misses", "maxsize", "currsize"])
 
 class TestLRU(unittest.TestCase):
 
@@ -47,7 +51,8 @@ class TestLRU(unittest.TestCase):
         self.assertEqual(currsize, 1)
 
         # Test bypassing the cache
-        self.assertIs(f.__wrapped__, orig)
+        if hasattr(self, 'assertIs'):
+            self.assertIs(f.__wrapped__, orig)
         f.__wrapped__(x, y)
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 0)
@@ -57,14 +62,14 @@ class TestLRU(unittest.TestCase):
         # test size zero (which means "never-cache")
         @fastcache.clru_cache(0)
         def f():
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return 20
         self.assertEqual(f.cache_info().maxsize, 0)
-        f_cnt = 0
+        f_cnt = [0]
         for i in range(5):
             self.assertEqual(f(), 20)
-        self.assertEqual(f_cnt, 5)
+        self.assertEqual(f_cnt, [5])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 0)
         self.assertEqual(misses, 5)
@@ -73,14 +78,14 @@ class TestLRU(unittest.TestCase):
         # test size one
         @fastcache.clru_cache(1)
         def f():
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return 20
         self.assertEqual(f.cache_info().maxsize, 1)
-        f_cnt = 0
+        f_cnt[0] = 0
         for i in range(5):
             self.assertEqual(f(), 20)
-        self.assertEqual(f_cnt, 1)
+        self.assertEqual(f_cnt, [1])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 4)
         self.assertEqual(misses, 1)
@@ -89,15 +94,15 @@ class TestLRU(unittest.TestCase):
         # test size two
         @fastcache.clru_cache(2)
         def f(x):
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return x*10
         self.assertEqual(f.cache_info().maxsize, 2)
-        f_cnt = 0
+        f_cnt[0] = 0
         for x in 7, 9, 7, 9, 7, 9, 8, 8, 8, 9, 9, 9, 8, 8, 8, 7:
             #    *  *              *                          *
             self.assertEqual(f(x), x*10)
-        self.assertEqual(f_cnt, 4)
+        self.assertEqual(f_cnt, [4])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 12)
         self.assertEqual(misses, 4)
@@ -112,10 +117,10 @@ class TestLRU(unittest.TestCase):
         self.assertEqual([fib(n) for n in range(16)],
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610])
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
 
     def test_lru_with_exceptions(self):
         # Verify that user_function exceptions get passed through without
@@ -126,12 +131,21 @@ class TestLRU(unittest.TestCase):
             def func(i):
                 return 'abc'[i]
             self.assertEqual(func(0), 'a')
-            with self.assertRaises(IndexError) as cm:
-                func(15)
-            self.assertIsNone(cm.exception.__context__)
-            # Verify that the previous exception did not result in a cached entry
-            with self.assertRaises(IndexError):
-                func(15)
+            try:
+                with self.assertRaises(IndexError) as cm:
+                    func(15)
+                # Does not have this attribute in Py2
+                if hasattr(cm.exception,'__context__'):
+                    self.assertIsNone(cm.exception.__context__)
+                # Verify that the previous exception did not result in a cached entry
+                with self.assertRaises(IndexError):
+                    func(15)
+            except TypeError:
+                # py26 unittest wants assertRaises called with another arg
+                if sys.version_info[:2] != (2, 6):
+                    raise
+                else:
+                    pass
 
     def test_lru_with_types(self):
         for maxsize in (None, 128):
@@ -160,10 +174,10 @@ class TestLRU(unittest.TestCase):
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610]
         )
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=128, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=128, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=128, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=128, currsize=0))
 
     def test_lru_with_keyword_args_maxsize_none(self):
         @fastcache.clru_cache(maxsize=None)
@@ -174,10 +188,10 @@ class TestLRU(unittest.TestCase):
         self.assertEqual([fib(n=number) for number in range(16)],
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610])
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
 
     def test_need_for_rlock(self):
         # This will deadlock on an LRU cache that uses a regular lock
@@ -202,22 +216,3 @@ class TestLRU(unittest.TestCase):
         test_func(DoubleEq(2))                      # Load the cache
         self.assertEqual(test_func(DoubleEq(2)),    # Trigger a re-entrant __eq__ call
                          DoubleEq(2))               # Verify the correct return value
-
-def test_main(verbose=None):
-    test_classes = (
-        TestLRU,
-    )
-    support.run_unittest(*test_classes)
-
-    # verify reference counting
-    if verbose and hasattr(sys, "gettotalrefcount"):
-        import gc
-        counts = [None] * 5
-        for i in range(len(counts)):
-            support.run_unittest(*test_classes)
-            gc.collect()
-            counts[i] = sys.gettotalrefcount()
-        print(counts)
-
-if __name__ == '__main__':
-    test_main(verbose=True)
