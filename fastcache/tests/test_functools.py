@@ -10,6 +10,12 @@ import unittest
 import fastcache
 import functools
 
+try:
+    from functools import _CacheInfo
+except ImportError:
+    _CacheInfo = collections.namedtuple("CacheInfo", 
+                    ["hits", "misses", "maxsize", "currsize"])
+
 class TestLRU(unittest.TestCase):
 
     def test_lru(self):
@@ -45,7 +51,8 @@ class TestLRU(unittest.TestCase):
         self.assertEqual(currsize, 1)
 
         # Test bypassing the cache
-        self.assertIs(f.__wrapped__, orig)
+        if hasattr(self, 'assertIs'):
+            self.assertIs(f.__wrapped__, orig)
         f.__wrapped__(x, y)
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 0)
@@ -110,10 +117,10 @@ class TestLRU(unittest.TestCase):
         self.assertEqual([fib(n) for n in range(16)],
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610])
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
 
     def test_lru_with_exceptions(self):
         # Verify that user_function exceptions get passed through without
@@ -124,12 +131,21 @@ class TestLRU(unittest.TestCase):
             def func(i):
                 return 'abc'[i]
             self.assertEqual(func(0), 'a')
-            with self.assertRaises(IndexError) as cm:
-                func(15)
-            self.assertIsNone(cm.exception.__context__)
-            # Verify that the previous exception did not result in a cached entry
-            with self.assertRaises(IndexError):
-                func(15)
+            try:
+                with self.assertRaises(IndexError) as cm:
+                    func(15)
+                # Does not have this attribute in Py2
+                if hasattr(cm.exception,'__context__'):
+                    self.assertIsNone(cm.exception.__context__)
+                # Verify that the previous exception did not result in a cached entry
+                with self.assertRaises(IndexError):
+                    func(15)
+            except TypeError:
+                # py26 unittest wants assertRaises called with another arg
+                if sys.version_info[:2] != (2, 6):
+                    raise
+                else:
+                    pass
 
     def test_lru_with_types(self):
         for maxsize in (None, 128):
@@ -158,10 +174,10 @@ class TestLRU(unittest.TestCase):
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610]
         )
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=128, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=128, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=128, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=128, currsize=0))
 
     def test_lru_with_keyword_args_maxsize_none(self):
         @fastcache.clru_cache(maxsize=None)
@@ -172,10 +188,10 @@ class TestLRU(unittest.TestCase):
         self.assertEqual([fib(n=number) for number in range(16)],
             [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610])
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
+            _CacheInfo(hits=28, misses=16, maxsize=None, currsize=16))
         fib.cache_clear()
         self.assertEqual(fib.cache_info(),
-            functools._CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
+            _CacheInfo(hits=0, misses=0, maxsize=None, currsize=0))
 
     def test_need_for_rlock(self):
         # This will deadlock on an LRU cache that uses a regular lock

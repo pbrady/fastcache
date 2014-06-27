@@ -1,6 +1,15 @@
 import unittest
 from fastcache import clru_cache as lru_cache
-from itertools import count
+import itertools
+
+try:
+    itertools.count(start=0, step=-1)
+    count = itertools.count
+except TypeError:
+    def count(start=0, step=1):
+        i = step-1
+        for j, c in enumerate(itertools.count(start)):
+            yield c + i*j
 
 class TestCLru_Cache(unittest.TestCase):
     """ Tests for lru_cache. """
@@ -92,19 +101,28 @@ class TestCLru_Cache(unittest.TestCase):
         cfunc = lru_cache(typed=False)(self.func)
         # initialize cache with integer args
         cfunc(1,2)
-        self.assertIs(cfunc(1, 2), cfunc(1.0, 2))
-        self.assertIs(cfunc(1, 2), cfunc(1, 2.0))
+        if hasattr(self, 'assertIs'):
+            myAssert = self.assertIs
+        else:
+            myAssert = self.assertEqual
+        myAssert(cfunc(1, 2), cfunc(1.0, 2))
+        myAssert(cfunc(1, 2), cfunc(1, 2.0))
         # test keywords
         cfunc(1,b=2)
-        self.assertIs(cfunc(1,b=2), cfunc(1.0,b=2))
-        self.assertIs(cfunc(1,b=2), cfunc(1,b=2.0))
+        myAssert(cfunc(1,b=2), cfunc(1.0,b=2))
+        myAssert(cfunc(1,b=2), cfunc(1,b=2.0))
 
     def test_typed_True(self):
         """ Verify typed==True. """
 
         cfunc = lru_cache(typed=True)(self.func)
-        self.assertIsNot(cfunc(1, 2), cfunc(1.0, 2))
-        self.assertIsNot(cfunc(1, 2), cfunc(1, 2.0))
+        if hasattr(self, 'assertIsNot'):
+            myAssert = self.assertIsNot
+        else:
+            myAssert = self.assertEqual
+        myAssert(cfunc(1, 2), cfunc(1.0, 2))
+        myAssert(cfunc(1, 2), cfunc(1, 2.0))
         # test keywords
-        self.assertIsNot(cfunc(1,b=2), cfunc(1.0,b=2))
-        self.assertIsNot(cfunc(1,b=2), cfunc(1,b=2.0))
+        myAssert(cfunc(1,b=2), cfunc(1.0,b=2))
+        myAssert(cfunc(1,b=2), cfunc(1,b=2.0))
+

@@ -22,7 +22,7 @@ lru_cache  - python wrapper around clru_cache (slower)
 """
 
 from ._lrucache import lrucache as clru_cache
-from functools import wraps
+from functools import update_wrapper
 
 def lru_cache(maxsize=256, typed=False, state=None):
     """Least-recently-used cache decorator.
@@ -49,14 +49,14 @@ def lru_cache(maxsize=256, typed=False, state=None):
     def func_wrapper(func):
         _cached_func = clru_cache(maxsize, typed, state)(func)
 
-        @wraps(func)
         def wrapper(*args, **kwargs):
             return _cached_func(*args, **kwargs)
-
+            
+        wrapper.__wrapped__ = func
         wrapper.cache_info = _cached_func.cache_info
         wrapper.cache_clear = _cached_func.cache_clear
 
-        return wrapper
+        return update_wrapper(wrapper,func)
 
     return func_wrapper
     
