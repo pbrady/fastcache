@@ -6,9 +6,7 @@ from itertools import permutations
 import pickle
 from random import choice
 import sys
-from test import support
 import unittest
-from weakref import proxy
 import fastcache
 import functools
 
@@ -57,14 +55,14 @@ class TestLRU(unittest.TestCase):
         # test size zero (which means "never-cache")
         @fastcache.clru_cache(0)
         def f():
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return 20
         self.assertEqual(f.cache_info().maxsize, 0)
-        f_cnt = 0
+        f_cnt = [0]
         for i in range(5):
             self.assertEqual(f(), 20)
-        self.assertEqual(f_cnt, 5)
+        self.assertEqual(f_cnt, [5])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 0)
         self.assertEqual(misses, 5)
@@ -73,14 +71,14 @@ class TestLRU(unittest.TestCase):
         # test size one
         @fastcache.clru_cache(1)
         def f():
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return 20
         self.assertEqual(f.cache_info().maxsize, 1)
-        f_cnt = 0
+        f_cnt[0] = 0
         for i in range(5):
             self.assertEqual(f(), 20)
-        self.assertEqual(f_cnt, 1)
+        self.assertEqual(f_cnt, [1])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 4)
         self.assertEqual(misses, 1)
@@ -89,15 +87,15 @@ class TestLRU(unittest.TestCase):
         # test size two
         @fastcache.clru_cache(2)
         def f(x):
-            nonlocal f_cnt
-            f_cnt += 1
+            #nonlocal f_cnt
+            f_cnt[0] += 1
             return x*10
         self.assertEqual(f.cache_info().maxsize, 2)
-        f_cnt = 0
+        f_cnt[0] = 0
         for x in 7, 9, 7, 9, 7, 9, 8, 8, 8, 9, 9, 9, 8, 8, 8, 7:
             #    *  *              *                          *
             self.assertEqual(f(x), x*10)
-        self.assertEqual(f_cnt, 4)
+        self.assertEqual(f_cnt, [4])
         hits, misses, maxsize, currsize = f.cache_info()
         self.assertEqual(hits, 12)
         self.assertEqual(misses, 4)
@@ -202,22 +200,3 @@ class TestLRU(unittest.TestCase):
         test_func(DoubleEq(2))                      # Load the cache
         self.assertEqual(test_func(DoubleEq(2)),    # Trigger a re-entrant __eq__ call
                          DoubleEq(2))               # Verify the correct return value
-
-def test_main(verbose=None):
-    test_classes = (
-        TestLRU,
-    )
-    support.run_unittest(*test_classes)
-
-    # verify reference counting
-    if verbose and hasattr(sys, "gettotalrefcount"):
-        import gc
-        counts = [None] * 5
-        for i in range(len(counts)):
-            support.run_unittest(*test_classes)
-            gc.collect()
-            counts[i] = sys.gettotalrefcount()
-        print(counts)
-
-if __name__ == '__main__':
-    test_main(verbose=True)
