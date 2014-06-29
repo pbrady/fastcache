@@ -86,39 +86,27 @@ HS_hash(hashseq *self)
 }
 
 // copied from PyListObject
+// hashseq's are internal objects which are only compared with 
+// other hashseq's when the hashes are the same.  
+// Furthermore, lookdict only calls this routine with op==Py_EQ
 static PyObject *
 hashseq_richcompare(PyObject *v, PyObject *w, int op)
 {
     PyListObject *vl, *wl;
-    hashseq *vh, *wh;
     Py_ssize_t i;
 
-    vh = (hashseq *) v;
-    wh = (hashseq *) w;
-
-    if (vh->hashvalue != wh->hashvalue && (op == Py_EQ || op == Py_NE)){
-      // hashvalues are different so hashseq's differ
-      PyObject *res;
-      if (op == Py_EQ)
-	res = Py_False;
-      else
-	res = Py_True;
-      Py_INCREF(res);
-      return res;
+    // should never happen
+    if (op != Py_EQ){
+      PyErr_SetString(PyExc_TypeError, "HashSeq object only support == comparison.");
+      return NULL;      
     }
 
     vl = (PyListObject *)v;
     wl = (PyListObject *)w;
 
-    if (Py_SIZE(vl) != Py_SIZE(wl) && (op == Py_EQ || op == Py_NE)) {
+    if (Py_SIZE(vl) != Py_SIZE(wl)) {
         /* Shortcut: if the lengths differ, the lists differ */
-        PyObject *res;
-        if (op == Py_EQ)
-            res = Py_False;
-        else
-            res = Py_True;
-        Py_INCREF(res);
-        return res;
+      return Py_INCREF(Py_False), Py_False;
     }
 
     /* Search for the first index where items are different */
@@ -126,46 +114,13 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
         int k = PyObject_RichCompareBool(vl->ob_item[i],
                                          wl->ob_item[i], Py_EQ);
         if (k < 0)
-            return NULL;
+	  return NULL;
         if (!k)
-            break;
+	  return Py_INCREF(Py_False), Py_False;
     }
-
-    if (i >= Py_SIZE(vl) || i >= Py_SIZE(wl)) {
-        /* No more items to compare -- compare sizes */
-        Py_ssize_t vs = Py_SIZE(vl);
-        Py_ssize_t ws = Py_SIZE(wl);
-        int cmp;
-        PyObject *res;
-        switch (op) {
-        case Py_LT: cmp = vs <  ws; break;
-        case Py_LE: cmp = vs <= ws; break;
-        case Py_EQ: cmp = vs == ws; break;
-        case Py_NE: cmp = vs != ws; break;
-        case Py_GT: cmp = vs >  ws; break;
-        case Py_GE: cmp = vs >= ws; break;
-        default: return NULL; /* cannot happen */
-        }
-        if (cmp)
-            res = Py_True;
-        else
-            res = Py_False;
-        Py_INCREF(res);
-        return res;
-    }
-
-    /* We have an item that differs -- shortcuts for EQ/NE */
-    if (op == Py_EQ) {
-        Py_INCREF(Py_False);
-        return Py_False;
-    }
-    if (op == Py_NE) {
-        Py_INCREF(Py_True);
-        return Py_True;
-    }
-
-    /* Compare the final item again using the proper operator */
-    return PyObject_RichCompare(vl->ob_item[i], wl->ob_item[i], op);
+    
+    // if we got here all items are equal
+    return Py_INCREF(Py_True), Py_True;
 }
 
 
@@ -583,8 +538,8 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 	Py_INCREF(co->root->next);
 	// handle deletions
 	PyDict_DelItem(co->cache_dict,old_key);
-	Py_XDECREF(old_key);
-	Py_XDECREF(old_res);
+	Py_DECREF(old_key);
+	Py_DECREF(old_res);
       }
       else {
 	if(insert_first(co->root, key, result) < 0) {
