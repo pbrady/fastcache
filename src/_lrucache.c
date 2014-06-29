@@ -565,24 +565,42 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       }
     // LRU
     else {
-      if(insert_first(co->root, key, result) < 0){
-	Py_DECREF(key);
-	Py_DECREF(result);
-	return NULL;
+      // if cache is full, repurpose the last link rather than
+      // passing it off to garbage collection.  
+      if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
+	// Note that the old key will be used to delete the link from the dictionary
+	// Be sure to INCREF old link so we don't lose it before 
+	// we add it when the PyDict_DelItem occurs
+	clist *last = co->root->prev;
+	PyObject *old_key = last->key;
+	PyObject *old_res = last->result;
+	// set new items
+	last->key = key;
+	last->result = result;
+	// bump to the front (get back the result we just set).
+	result = make_first(co->root, last);
+	// Increase ref count of repurposed link so we don't trigger GC
+	Py_INCREF(co->root->next);
+	// handle deletions
+	PyDict_DelItem(co->cache_dict,old_key);
+	Py_XDECREF(old_key);
+	Py_XDECREF(old_res);
       }
-
+      else {
+	if(insert_first(co->root, key, result) < 0) {
+	  Py_DECREF(key);
+	  Py_DECREF(result);
+	  return NULL;
+	}
+      }
       PyDict_SetItem(co->cache_dict, key, (PyObject *) co->root->next);
       Py_DECREF(co->root->next);
-
-      // if item list is too long, remove last node
-      if (((PyDictObject *)co->cache_dict)->ma_used > co->maxsize)
-	PyDict_DelItem(co->cache_dict,co->root->prev->key);
     }
     co->misses++;
 
     return result;
     
-  }
+  } // link != NULL
   else {
     Py_DECREF(key);
     if( co->maxsize < 0){

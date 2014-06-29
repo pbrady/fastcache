@@ -32,7 +32,7 @@ Use
 ---
 
     >>> from fastcache import clru_cache
-    >>> @clru_cache(maxsize=256)
+    >>> @clru_cache(maxsize=256, typed=True)
     >>> def f(a, b):
     ...     """Test function."""
     ...     return (a, ) + (b, )
@@ -50,4 +50,35 @@ Use
 
 Speed
 -----
-Benchmarks for this and other caching [here](http://nbviewer.ipython.org/gist/pbrady/916495198910e7d7c713/Benchmark.ipynb).
+
+The speed up vs `lru_cache` provided by `functools` in 3.3 or 3.4 is 10x-25x depending on the function signature.  A sample run of the benchmarking suite is 
+
+	>>> from fastcache import benchmark
+	>>> benchmark.run()
+	Test Suite 1 : 
+
+	Primarily tests cost of function call, hashing and cache hits.
+	Benchmark script based on
+		http://bugs.python.org/file28400/lru_cache_bench.py
+
+	function call                 speed up
+	untyped(i)                        9.82, typed(i)                         22.61
+	untyped("spam", i)               15.49, typed("spam", i)                 20.96
+	untyped("spam", "spam", i)       13.49, typed("spam", "spam", i)         17.74
+	untyped(a=i)                     12.10, typed(a=i)                       18.47
+	untyped(a="spam", b=i)            9.75, typed(a="spam", b=i)             13.83
+	untyped(a="spam", b="spam", c=i)  7.79, typed(a="spam", b="spam", c=i)   11.34
+
+				 min   mean    max
+	untyped    7.788 11.406 15.489
+	typed     11.340 17.490 22.608
+
+
+	Test Suite 2 :
+
+	Tests millions of misses and millions of hits to quantify
+	cache behavior when cache is full.
+
+	function call                 speed up
+	untyped(i, j, a="spammy")         7.87, typed(i, j, a="spammy")          10.71
+
