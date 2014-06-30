@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 setup(name = "fastcache", 
-      version = "0.2",
+      version = "0.3",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = "C implementation of Python 3 functools.lru_cache",
       author = "Peter Brady",
