@@ -813,10 +813,25 @@ static PyTypeObject lru_type = {
 PyDoc_STRVAR(lrucache__doc__,
 "lrucache(maxsize=128, typed=False, state=None)\n\
 \n\
-Least Recently Used Caching mechanism.\n\
+Least-recently-used cache decorator.\n\
 \n\
-If <typed> == False, f(3) == f(3.0).\n\
-<state> must be a list.");
+If *maxsize* is set to None, the LRU features are disabled and the cache\n\
+can grow without bound.\n\
+\n\
+If *typed* is True, arguments of different types will be cached separately.\n\
+For example, f(3.0) and f(3) will be treated as distinct calls with\n\
+distinct results.\n\
+\n\
+If *state* is a list, the items in the list will be incorporated into\n\
+argument hash.\n\
+\n\
+Arguments to the cached function must be hashable.\n\
+\n\
+View the cache statistics named tuple (hits, misses, maxsize, currsize)\n\
+with f.cache_info().  Clear the cache and statistics with f.cache_clear().\n\
+Access the underlying function with f.__wrapped__.\n\
+\n\
+See:  http://en.wikipedia.org/wiki/Cache_algorithms#Least_Recently_Used");
 static PyObject *
 lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 {

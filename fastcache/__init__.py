@@ -4,7 +4,7 @@ Provides 2 LRU caching function decorators:
 
 clru_cache - built-in (faster)
            >>> from fastcache import clru_cache
-           >>> @clru_cache(maxsize=256,typed=False,state=None)
+           >>> @clru_cache(maxsize=128,typed=False,state=None)
            ... def f(a, b):
            ...     return (a, )+(b, )
            ...
@@ -13,7 +13,7 @@ clru_cache - built-in (faster)
 
 lru_cache  - python wrapper around clru_cache (slower)
            >>> from fastcache import lru_cache
-           >>> @lru_cache(maxsize=256,typed=False,state=None)
+           >>> @lru_cache(maxsize=128,typed=False,state=None)
            ... def f(a, b):
            ...     return (a, )+(b, )
            ...
@@ -24,7 +24,7 @@ lru_cache  - python wrapper around clru_cache (slower)
 from ._lrucache import lrucache as clru_cache
 from functools import update_wrapper
 
-def lru_cache(maxsize=256, typed=False, state=None):
+def lru_cache(maxsize=128, typed=False, state=None):
     """Least-recently-used cache decorator.
 
     If *maxsize* is set to None, the LRU features are disabled and the cache
