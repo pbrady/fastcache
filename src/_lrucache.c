@@ -78,17 +78,17 @@ hashseq_dealloc(hashseq *self)
   Py_TRASHCAN_SAFE_END(self)
 }
 
-// return precomputed tuple hash for speed
+/* return precomputed tuple hash for speed */
 static Py_hash_t
 HS_hash(hashseq *self)
 {
   return self->hashvalue;
 }
 
-// copied from PyListObject
-// hashseq's are internal objects which are only compared with 
-// other hashseq's when the hashes are the same.  
-// Furthermore, lookdict only calls this routine with op==Py_EQ
+/* copied from PyListObject
+ * hashseq's are internal objects which are only compared with 
+ * other hashseq's when the hashes are the same.  
+ * Furthermore, lookdict only calls this routine with op==Py_EQ */
 static PyObject *
 hashseq_richcompare(PyObject *v, PyObject *w, int op)
 {
@@ -480,11 +480,18 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 {
   PyObject *key, *result, *link;
 
+  /* no cache, just update stats and return */
+  if (co->maxsize == 0) {
+    co->misses++;
+    return PyObject_Call(co->fn, args, kw);
+  }
+
+  /* generate a key from hashing the arguments */
   key = make_key(co,args,kw);
   if (key == NULL)
     return NULL;
 
-  // check for unhashable type
+  /* check for unhashable type, error has already been cleared in make_key */
   if ( ((hashseq *)key)->hashvalue == -1){
     Py_DECREF(key);
 
@@ -499,9 +506,8 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return PyObject_Call(co->fn, args, kw);
   }
 
-
-  // use hashseq as key and check if value has already been
-  // computed.  If so, return
+  /* For an unbounded cache, link is simply the result of the function call
+   * For an LRU cache, link is a pointer to a clist node */
   link = PyDict_GetItem(co->cache_dict, key);
 
   if (link == NULL){
@@ -510,22 +516,19 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       Py_DECREF(key);
       return NULL;
     }
-    // no cache
-    if (co->maxsize == 0) 
-      Py_DECREF(key);
-    // unbounded cache
-    else if (co->maxsize < 0){
+    /* Unbounded cache, no clist maintenance */
+    if (co->maxsize < 0){
       PyDict_SetItem(co->cache_dict, key, result);
       Py_DECREF(key);
       }
-    // LRU
+    /* Least Recently Used cache */
     else {
-      // if cache is full, repurpose the last link rather than
-      // passing it off to garbage collection.  
+      /* if cache is full, repurpose the last link rather than
+       * passing it off to garbage collection.  */
       if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
-	// Note that the old key will be used to delete the link from the dictionary
-	// Be sure to INCREF old link so we don't lose it before 
-	// we add it when the PyDict_DelItem occurs
+	/* Note that the old key will be used to delete the link from the dictionary
+	 * Be sure to INCREF old link so we don't lose it before 
+	 * we add it when the PyDict_DelItem occurs */
 	clist *last = co->root->prev;
 	PyObject *old_key = last->key;
 	PyObject *old_res = last->result;
@@ -563,6 +566,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       Py_INCREF(result);
     }
     else
+      /* bump link to the front of the list and get result from link */
       result = make_first(co->root, (clist *) link);
 
     co->hits++;
