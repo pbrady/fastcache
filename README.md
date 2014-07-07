@@ -21,6 +21,12 @@ Manually :
     git clone https://github.com/pbrady/fastcache.git
     cd fastcache
     python setup.py install
+    
+Via [conda](http://conda.pydata.org/docs/index.html) :
+
+    git clone https://github.com/pbrady/fastcache.git
+    conda-build fastcache
+    conda install --use-local fastcache
 
 Test
 ----
