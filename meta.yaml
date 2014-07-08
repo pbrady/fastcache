@@ -1,6 +1,6 @@
 package:
   name: fastcache
-  version: 0.3.1
+  version: 0.3.2
 
 source:
    git_url : https://github.com/pbrady/fastcache.git
