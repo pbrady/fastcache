@@ -75,7 +75,7 @@ Provides 2 Least Recently Used caching function decorators:
 '''
 
 setup(name = "fastcache", 
-      version = "0.3.2",
+      version = "0.3.3",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = long_description,
       author = "Peter Brady",
