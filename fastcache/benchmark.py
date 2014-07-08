@@ -5,6 +5,7 @@
 
     Not available for Py < 3.3.
 """
+from __future__ import print_function
 
 import sys
 
@@ -30,7 +31,8 @@ if sys.version_info[:2] >= (3, 3):
     def _arg_gen(min=1, max=100, repeat=3):
         for i in range(min, max):
             for r in range(repeat):
-                yield from zip(range(i), count(i, -1))
+                for j, k in zip(range(i), count(i, -1)): 
+                    yield j, k
 
     def _print_speedup(results):
         print('')
