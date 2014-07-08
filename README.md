@@ -43,22 +43,26 @@ Tests include the official suite of tests from Python standard library for funct
 Use
 ---
 
-    >>> from fastcache import clru_cache
-    >>> @clru_cache(maxsize=256, typed=True)
-    >>> def f(a, b):
-    ...     """Test function."""
-    ...     return (a, ) + (b, )
-    >>> f(1,2)
-    (1, 2)
-    >>> f.cache_info()
-    CacheInfo(hits=0, misses=1, maxsize=256, currsize=1)
-    >>> f(1,2)
-    (1, 2)
-    >>> f.cache_info()
-    CacheInfo(hits=1, misses=1, maxsize=256, currsize=1)
-    >>> f.cache_clear()
-    >>> f.cache_info()
-    CacheInfo(hits=0, misses=0, maxsize=256, currsize=0)
+    >>> from fastcache import clru_cache, __version__
+    >>> __version__
+    '0.3.3'
+    >>> @clru_cache(maxsize=325, typed=False, state=None)
+    ... def fib(n):
+    ...     """Terrible Fibonacci number generator."""
+    ...     return n if n < 2 else fib(n-1) + fib(n-2)
+    ... 
+    >>> fib(300)
+    222232244629420445529739893461909967206666939096499764990979600
+    >>> fib.cache_info()
+    CacheInfo(hits=298, misses=301, maxsize=325, currsize=301)
+    >>> print(fib.__doc__)
+    Terrible Fibonacci number generator.
+    >>> fib.cache_clear()
+    >>> fib.cache_info()
+    CacheInfo(hits=0, misses=0, maxsize=325, currsize=0)
+    >>> fib.__wrapped__(300)
+    222232244629420445529739893461909967206666939096499764990979600
+
 
 Speed
 -----
