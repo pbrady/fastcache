@@ -1,6 +1,10 @@
 #include <Python.h>
 #include "structmember.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if PY_MAJOR_VERSION == 2
 #define _PY2
 typedef long Py_hash_t;
@@ -985,3 +989,7 @@ PyInit__lrucache(void)
   return m;
 #endif
 }
+
+#ifdef __cplusplus
+}
+#endif
