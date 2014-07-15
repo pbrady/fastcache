@@ -12,7 +12,7 @@ Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 exceptions:
 Install
 -------
 
-Via pip: 
+Via [pip](https://pypi.python.org/pypi/fastcache): 
 
     pip install fastcache
 
