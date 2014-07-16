@@ -5,9 +5,13 @@ C implementation of Python 3 lru_cache for Python 2.6, 2.7, 3.2, 3.3, 3.4
 
 Passes all tests in the standard library for functools.lru_cache.
 
-Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 exceptions:
-  1.  Raises a `UserWarning` upon receiving unhashable arguments and returns the result of calling the user function with the received arguments.  The official implementation raises a `TypeError`
-  2.  An additional argument `state` may be supplied which must be a `list`.  This allows one to safely cache functions for which the result depends on some context which is not a part of the function call signature. 
+Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 enhancements:
+
+1.  An additional argument `state` may be supplied which must be a `list`.  This allows one to safely cache functions for which the result depends on some context which is not a part of the function call signature.
+2.  An additional argument `unhashable` may be supplied to control how the cached function responds to unhashable arguments.  The options are:
+  *  "error" (default) - Raise a `TypeError`
+  *  "warning"         - Raise a `UserWarning` and call the wrapped function with the supplied arguments.
+  *  "ignore"          - Just call the wrapped function with the supplied arguments.
 
 Install
 -------
@@ -46,7 +50,7 @@ Use
     >>> from fastcache import clru_cache, __version__
     >>> __version__
     '0.3.3'
-    >>> @clru_cache(maxsize=325, typed=False, state=None)
+    >>> @clru_cache(maxsize=325, typed=False)
     ... def fib(n):
     ...     """Terrible Fibonacci number generator."""
     ...     return n if n < 2 else fib(n-1) + fib(n-2)
