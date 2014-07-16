@@ -78,7 +78,7 @@ class TestCLru_Cache(unittest.TestCase):
     def test_warn_unhashable_args(self):
         """ Function arguments must be hashable. """
 
-        @lru_cache(unhashable='warn')
+        @lru_cache(unhashable='warning')
         def f(a, b):
             return (a, ) + (b, )
 
@@ -103,6 +103,11 @@ class TestCLru_Cache(unittest.TestCase):
         def f(a, b):
             return (a, ) + (b, )
 
+        self.assertRaises(TypeError, f, [1], 2)
+
+        @lru_cache(unhashable='error')
+        def f(a, b):
+            pass
         self.assertRaises(TypeError, f, [1], 2)
 
     def test_state_type(self):

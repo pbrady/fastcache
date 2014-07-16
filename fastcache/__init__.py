@@ -27,7 +27,7 @@ __version__ = "0.3.3"
 from ._lrucache import clru_cache
 from functools import update_wrapper
 
-def lru_cache(maxsize=128, typed=False, state=None, unhashable='exception'):
+def lru_cache(maxsize=128, typed=False, state=None, unhashable='error'):
     """Least-recently-used cache decorator.
 
     If *maxsize* is set to None, the LRU features are disabled and
@@ -40,12 +40,12 @@ def lru_cache(maxsize=128, typed=False, state=None, unhashable='exception'):
     If *state* is a list, the items in the list will be incorporated into
     argument hash.
 
-    The result of calling the cached function with unhashable (mutable)"
+    The result of calling the cached function with unhashable (mutable)
     arguments depends on the value of *unhashable*:
 
-        If *unhashable* is 'exception', a TypeError will be raised.
+        If *unhashable* is 'error', a TypeError will be raised.
 
-        If *unhashable* is 'warn', a UserWarning will be raised, and
+        If *unhashable* is 'warning', a UserWarning will be raised, and
         the wrapped function will be called with the supplied arguments.
         A miss will be recorded in the cache statistics.
 
