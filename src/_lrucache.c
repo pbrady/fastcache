@@ -301,7 +301,7 @@ make_first(clist *root, clist *node){
 ***********************************************************/
 
 /* how will unhashable arguments be handled */
-enum unhashable {FC_EXCEPTION, FC_WARN, FC_IGNORE, FC_FAIL};
+enum unhashable {FC_ERROR, FC_WARNING, FC_IGNORE, FC_FAIL};
 
 typedef struct {
   PyObject_HEAD
@@ -481,7 +481,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   Py_DECREF(tup);
   /*and handle case of err == exception */
   if( hs->hashvalue == -1){
-    if (co->err == FC_EXCEPTION)
+    if (co->err == FC_ERROR)
       return NULL;
     else
       PyErr_Clear();
@@ -509,7 +509,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   /* check for unhashable type, error has already been cleared in make_key */
   if ( ((hashseq *)key)->hashvalue == -1){
     Py_DECREF(key);
-    if (co->err == FC_WARN)
+    if (co->err == FC_WARNING)
       // try to issue warning
       if( PyErr_WarnEx(PyExc_UserWarning,
                        "Unhashable arguments cannot be cached",1) < 0){
@@ -832,11 +832,11 @@ static PyTypeObject lru_type = {
 enum unhashable
 process_uh(PyObject *arg, PyObject *(*f)(const char *))
 {
-  PyObject *uh[3] = {f("exception"), f("warn"), f("ignore")};
+  PyObject *uh[3] = {f("error"), f("warning"), f("ignore")};
   int i, j;
   if (arg != NULL){
 
-    enum unhashable vals[3] = {FC_EXCEPTION, FC_WARN, FC_IGNORE};
+    enum unhashable vals[3] = {FC_ERROR, FC_WARNING, FC_IGNORE};
 
     for(i=0; i<3; i++){
       int k = PyObject_RichCompareBool(arg, uh[i], Py_EQ);
@@ -856,13 +856,13 @@ process_uh(PyObject *arg, PyObject *(*f)(const char *))
   for(j=0; j<3; j++)
     Py_DECREF(uh[j]);
   PyErr_SetString(PyExc_TypeError,
-                  "Argument <unhashable> must be 'exception', 'warn', or 'ignore'");
+                  "Argument <unhashable> must be 'error', 'warning', or 'ignore'");
   return FC_FAIL;
 }
 
 /* LRU cache decorator */
 PyDoc_STRVAR(lrucache__doc__,
-"clru_cache(maxsize=128, typed=False, state=None, unhashable='exception')\n\n"
+"clru_cache(maxsize=128, typed=False, state=None, unhashable='error')\n\n"
 "Least-recently-used cache decorator.\n\n"
 "If *maxsize* is set to None, the LRU features are disabled and the\n"
 "cache can grow without bound.\n\n"
@@ -873,8 +873,8 @@ PyDoc_STRVAR(lrucache__doc__,
 "argument hash.\n\n"
 "The result of calling the cached function with unhashable (mutable)\n"
 "arguments depends on the value of *unhashable*:\n\n"
-"    If *unhashable* is 'exception', a TypeError will be raised.\n\n"
-"    If *unhashable* is 'warn', a UserWarning will be raised, and \n"
+"    If *unhashable* is 'error', a TypeError will be raised.\n\n"
+"    If *unhashable* is 'warning', a UserWarning will be raised, and\n"
 "    the wrapped function will be called with the supplied arguments.\n"
 "    A miss will be recorded in the cache statistics.\n\n"
 "    If *unhashable* is 'ignore', the wrapped function will be called\n"
@@ -942,7 +942,7 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 
   // check unhashable
   if (oerr == Py_None)
-    err = FC_EXCEPTION;
+    err = FC_ERROR;
   else{
 #ifdef _PY2
     if(PyString_Check(oerr))
