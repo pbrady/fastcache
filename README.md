@@ -16,16 +16,16 @@ Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 enhancements:
 Install
 -------
 
-Via [pip](https://pypi.python.org/pypi/fastcache): 
+Via [pip](https://pypi.python.org/pypi/fastcache):
 
     pip install fastcache
 
-Manually : 
+Manually :
 
     git clone https://github.com/pbrady/fastcache.git
     cd fastcache
     python setup.py install
-    
+
 Via [conda](http://conda.pydata.org/docs/index.html) :
 
     git clone https://github.com/pbrady/fastcache.git
@@ -54,7 +54,7 @@ Use
     ... def fib(n):
     ...     """Terrible Fibonacci number generator."""
     ...     return n if n < 2 else fib(n-1) + fib(n-2)
-    ... 
+    ...
     >>> fib(300)
     222232244629420445529739893461909967206666939096499764990979600
     >>> fib.cache_info()
@@ -71,14 +71,14 @@ Use
 Speed
 -----
 
-The speed up vs `lru_cache` provided by `functools` in 3.3 or 3.4 is 10x-30x depending on the function signature and whether one is comparing with 3.3 or 3.4.  A sample run of the benchmarking suite for 3.3 is 
+The speed up vs `lru_cache` provided by `functools` in 3.3 or 3.4 is 10x-30x depending on the function signature and whether one is comparing with 3.3 or 3.4.  A sample run of the benchmarking suite for 3.3 is
 
 	>>> import sys
 	>>> sys.version_info
 	sys.version_info(major=3, minor=3, micro=5, releaselevel='final', serial=0)
 	>>> from fastcache import benchmark
 	>>> benchmark.run()
-	Test Suite 1 : 
+	Test Suite 1 :
 
 	Primarily tests cost of function call, hashing and cache hits.
 	Benchmark script based on
@@ -108,11 +108,11 @@ The speed up vs `lru_cache` provided by `functools` in 3.3 or 3.4 is 10x-30x dep
 A sample run of the benchmarking suite for 3.4 is
 
 	>>> import sys
-	>>> sys.version_info 
+	>>> sys.version_info
 	sys.version_info(major=3, minor=4, micro=1, releaselevel='final', serial=0)
 	>>> from fastcache import benchmark
 	>>> benchmark.run()
-	Test Suite 1 : 
+	Test Suite 1 :
 
 	Primarily tests cost of function call, hashing and cache hits.
 	Benchmark script based on
@@ -138,7 +138,3 @@ A sample run of the benchmarking suite for 3.4 is
 
 	function call                 speed up
 	untyped(i, j, a="spammy")         8.27, typed(i, j, a="spammy")          11.18
-
-
-
-

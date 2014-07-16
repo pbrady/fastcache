@@ -6,7 +6,7 @@ clru_cache - built-in (faster)
            >>> from fastcache import clru_cache
            >>> @clru_cache(maxsize=128,typed=False)
            ... def f(a, b):
-           ...     return (a, )+(b, )
+           ...     return (a, ) + (b, )
            ...
            >>> type(f)
            >>> <class 'fastcache.clru_cache'>
@@ -15,13 +15,13 @@ lru_cache  - python wrapper around clru_cache (slower)
            >>> from fastcache import lru_cache
            >>> @lru_cache(maxsize=128,typed=False)
            ... def f(a, b):
-           ...     return (a, )+(b, )
+           ...     return (a, ) + (b, )
            ...
            >>> type(f)
            >>> <class 'function'>
 """
 
-__version__ = "0.3.3"
+__version__ = "0.4.0"
 
 
 from ._lrucache import clru_cache
