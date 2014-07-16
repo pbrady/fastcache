@@ -21,14 +21,14 @@ typedef struct {
   Py_hash_t hashvalue;
 } hashseq;
 
-/* hashseq_{traverse, clear, dealloc} are copied from PyListObject 
+/* hashseq_{traverse, clear, dealloc} are copied from PyListObject
  * are they needed here?
  */
 static int
 hashseq_traverse(hashseq *self, visitproc visit, void *arg)
 {
   Py_ssize_t i;
-  
+
   for (i = Py_SIZE(self); --i >= 0; )
     Py_VISIT(((PyListObject *)self)->ob_item[i]);
   return 0;
@@ -90,8 +90,8 @@ HS_hash(hashseq *self)
 }
 
 /* copied from PyListObject
- * hashseq's are internal objects which are only compared with 
- * other hashseq's when the hashes are the same.  
+ * hashseq's are internal objects which are only compared with
+ * other hashseq's when the hashes are the same.
  * Furthermore, lookdict only calls this routine with op==Py_EQ */
 static PyObject *
 hashseq_richcompare(PyObject *v, PyObject *w, int op)
@@ -102,7 +102,7 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
     // should never happen
     if (op != Py_EQ){
       PyErr_SetString(PyExc_TypeError, "HashSeq object only support == comparison.");
-      return NULL;      
+      return NULL;
     }
 
     vl = (PyListObject *)v;
@@ -118,11 +118,11 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
         int k = PyObject_RichCompareBool(vl->ob_item[i],
                                          wl->ob_item[i], Py_EQ);
         if (k < 0)
-	  return NULL;
+          return NULL;
         if (!k)
-	  return Py_INCREF(Py_False), Py_False;
+          return Py_INCREF(Py_False), Py_False;
     }
-    
+
     // if we got here all items are equal
     return Py_INCREF(Py_True), Py_True;
 }
@@ -186,7 +186,7 @@ typedef struct clist{
   PyObject *result;
 } clist;
 
-static void 
+static void
 clist_dealloc(clist *co)
 {
   clist *prev = co->prev;
@@ -273,7 +273,7 @@ insert_first(clist *root, PyObject *key, PyObject *result){
   oldfirst->prev = first;
 
   return 1;
-  
+
 }
 
 static PyObject *
@@ -285,7 +285,7 @@ make_first(clist *root, clist *node){
     // first adjust pointers around node's position
     node->prev->next = node->next;
     node->next->prev = node->prev;
-    
+
     root->next = node;
     node->next = oldfirst;
     node->prev = root;
@@ -300,18 +300,23 @@ make_first(clist *root, clist *node){
  cachedobject is the actual function with the cached results
 ***********************************************************/
 
+/* how will unhashable arguments be handled */
+enum unhashable {FC_EXCEPTION, FC_WARN, FC_IGNORE, FC_FAIL};
+
 typedef struct {
   PyObject_HEAD
   PyObject *fn ; // original function
   PyObject *func_module, *func_name, *func_qualname, *func_annotations;
   PyObject *func_dict;
-  PyObject *cache_dict; 
-  PyObject *ex_state; 
+  PyObject *cache_dict;
+  PyObject *ex_state;
   int typed;
+  enum unhashable err;
   PyObject *cinfo; // named tuple constructor
   Py_ssize_t maxsize, hits, misses;
   clist *root;
 } cacheobject ;
+
 
 #define OFF(x) offsetof(cacheobject, x)
 
@@ -332,7 +337,7 @@ cache_get_doc(cacheobject * co, void *closure)
   PyFunctionObject * fn = (PyFunctionObject *) co->fn;
   if (fn->func_doc == NULL)
     Py_RETURN_NONE;
-  
+
   return Py_INCREF(fn->func_doc), fn->func_doc;
 }
 
@@ -370,7 +375,7 @@ static void cache_dealloc(cacheobject *co)
   Py_CLEAR(co->cinfo);
   Py_CLEAR(co->root);
   Py_TYPE(co)->tp_free(co);
-  
+
 }
 
 static PyObject *
@@ -411,7 +416,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     return PyErr_NoMemory();
   }
   memset(lo->ob_item, 0, nbytes);
-  
+
   Py_SIZE(lo) = size;
   lo->allocated = size;
   _PyObject_GC_TRACK(hs);
@@ -437,7 +442,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     }
     off += arg_size;
   }
-  
+
   // incorporate keyword arguments
   if(kw_size > 0){
     keys = PyDict_Keys(kw);
@@ -470,11 +475,17 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     Py_DECREF(hs);
     return NULL;
   }
-  // set hashvalue
+  /* set hashvalue */
   hs->hashvalue = PyTuple_Type.tp_hash(tup);
-  if( hs->hashvalue == -1)
-    PyErr_Clear();
+  /* DECREF tup before checking hash */
   Py_DECREF(tup);
+  /*and handle case of err == exception */
+  if( hs->hashvalue == -1){
+    if (co->err == FC_EXCEPTION)
+      return NULL;
+    else
+      PyErr_Clear();
+  }
 
   return (PyObject *)hs;
 }
@@ -498,14 +509,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   /* check for unhashable type, error has already been cleared in make_key */
   if ( ((hashseq *)key)->hashvalue == -1){
     Py_DECREF(key);
-
-    // try to issue warning
-    if( PyErr_WarnEx(PyExc_UserWarning, 
-		     "Unhashable arguments cannot be cached",1) < 0){
-      // warning becomes exception
-      PyErr_SetString(PyExc_TypeError, "Cached function arguments must be hashable");
-      return NULL;
-    }
+    if (co->err == FC_WARN)
+      // try to issue warning
+      if( PyErr_WarnEx(PyExc_UserWarning,
+                       "Unhashable arguments cannot be cached",1) < 0){
+        // warning becomes exception
+        PyErr_SetString(PyExc_TypeError, "Cached function arguments must be hashable");
+        return NULL;
+      }
     co->misses++;
     return PyObject_Call(co->fn, args, kw);
   }
@@ -531,7 +542,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
        * passing it off to garbage collection.  */
       if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
 	/* Note that the old key will be used to delete the link from the dictionary
-	 * Be sure to INCREF old link so we don't lose it before 
+	 * Be sure to INCREF old link so we don't lose it before
 	 * we add it when the PyDict_DelItem occurs */
 	clist *last = co->root->prev;
 	PyObject *old_key = last->key;
@@ -561,7 +572,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     co->misses++;
 
     return result;
-    
+
   } // link != NULL
   else {
     Py_DECREF(key);
@@ -625,7 +636,7 @@ PyDoc_STRVAR(fn_doc,
 
 static PyTypeObject cache_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "_lrucache.cache",                /* tp_name */
+    "fastcache.clru_cache",                /* tp_name */
     sizeof(cacheobject),                       /* tp_basicsize */
     0,                                  /* tp_itemsize */
     /* methods */
@@ -679,6 +690,7 @@ typedef struct {
   Py_ssize_t maxsize;
   PyObject *state;
   int typed;
+  enum unhashable err;
 } lruobject;
 
 static void lru_dealloc(lruobject *lru)
@@ -700,8 +712,7 @@ get_func_attr(PyObject *fo, const char *name)
   }
 }
 
-// simple caller which prints some business and returns the arg if
-// it is a function
+/* takes a function as an argument and returns a cacheobject */
 static PyObject *
 lru_call(lruobject *lru, PyObject *args, PyObject *kw)
 {
@@ -749,7 +760,7 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   co->func_dict = get_func_attr(fo, "__dict__");
 
   co->fn = fo; // __wrapped__
-  Py_INCREF(co->fn); 
+  Py_INCREF(co->fn);
 
   co->func_module = get_func_attr(fo, "__module__");
   co->func_annotations = get_func_attr(fo, "__annotations__");
@@ -762,21 +773,21 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   co->hits = 0;
   co->misses = 0;
   co->typed = lru->typed;
-
+  co->err = lru->err;
   // start with self-referencing root node
   co->root->prev = co->root;
   co->root->next = co->root;
   co->root->key = Py_None;
   co->root->result = Py_None;
   Py_INCREF(co->root->key);
-  Py_INCREF(co->root->result);  
+  Py_INCREF(co->root->result);
 
   return (PyObject *)co;
 }
 
 static PyTypeObject lru_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "_lrucache.lru",                /* tp_name */
+    "fastcache.lru",                /* tp_name */
     sizeof(lruobject),                       /* tp_basicsize */
     0,                                  /* tp_itemsize */
     /* methods */
@@ -817,51 +828,87 @@ static PyTypeObject lru_type = {
     0,                                  /* tp_free */
 };
 
+/* helper function for processing 'unhashable' */
+enum unhashable
+process_uh(PyObject *arg, PyObject *(*f)(const char *))
+{
+  PyObject *uh[3] = {f("exception"), f("warn"), f("ignore")};
+  int i, j;
+  if (arg != NULL){
+
+    enum unhashable vals[3] = {FC_EXCEPTION, FC_WARN, FC_IGNORE};
+
+    for(i=0; i<3; i++){
+      int k = PyObject_RichCompareBool(arg, uh[i], Py_EQ);
+      if (k < 0){
+        for(j=0; j<3; j++)
+          Py_DECREF(uh[j]);
+        return FC_FAIL;
+      }
+      if (k){
+        /* DECREF objects and return value */
+        for(j=0; j<3; j++)
+          Py_DECREF(uh[j]);
+        return vals[i];
+      }
+    }
+  }
+  for(j=0; j<3; j++)
+    Py_DECREF(uh[j]);
+  PyErr_SetString(PyExc_TypeError,
+                  "Argument <unhashable> must be 'exception', 'warn', or 'ignore'");
+  return FC_FAIL;
+}
+
 /* LRU cache decorator */
 PyDoc_STRVAR(lrucache__doc__,
-"lrucache(maxsize=128, typed=False, state=None)\n\
-\n\
-Least-recently-used cache decorator.\n\
-\n\
-If *maxsize* is set to None, the LRU features are disabled and the cache\n\
-can grow without bound.\n\
-\n\
-If *typed* is True, arguments of different types will be cached separately.\n\
-For example, f(3.0) and f(3) will be treated as distinct calls with\n\
-distinct results.\n\
-\n\
-If *state* is a list, the items in the list will be incorporated into\n\
-argument hash.\n\
-\n\
-Arguments to the cached function must be hashable.\n\
-\n\
-View the cache statistics named tuple (hits, misses, maxsize, currsize)\n\
-with f.cache_info().  Clear the cache and statistics with f.cache_clear().\n\
-Access the underlying function with f.__wrapped__.\n\
-\n\
-See:  http://en.wikipedia.org/wiki/Cache_algorithms#Least_Recently_Used");
+"clru_cache(maxsize=128, typed=False, state=None, unhashable='exception')\n\n"
+"Least-recently-used cache decorator.\n\n"
+"If *maxsize* is set to None, the LRU features are disabled and the\n"
+"cache can grow without bound.\n\n"
+"If *typed* is True, arguments of different types will be cached\n"
+"separately.  For example, f(3.0) and f(3) will be treated as distinct\n"
+"calls with distinct results.\n\n"
+"If *state* is a list, the items in the list will be incorporated into\n"
+"argument hash.\n\n"
+"The result of calling the cached function with unhashable (mutable)\n"
+"arguments depends on the value of *unhashable*:\n\n"
+"    If *unhashable* is 'exception', a TypeError will be raised.\n\n"
+"    If *unhashable* is 'warn', a UserWarning will be raised, and \n"
+"    the wrapped function will be called with the supplied arguments.\n"
+"    A miss will be recorded in the cache statistics.\n\n"
+"    If *unhashable* is 'ignore', the wrapped function will be called\n"
+"    with the supplied arguments. A miss will will be recorded in\n"
+"    the cache statistics.\n\n"
+"View the cache statistics named tuple (hits, misses, maxsize, currsize)\n"
+"with f.cache_info().  Clear the cache and statistics with\n"
+"f.cache_clear(). Access the underlying function with f.__wrapped__.\n\n"
+"See:  http://en.wikipedia.org/wiki/Cache_algorithms#Least_Recently_Used");
+
 static PyObject *
 lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 {
   PyObject *state = Py_None;
   int typed = 0;
   PyObject *omaxsize = Py_False;
+  PyObject *oerr = Py_None;
   Py_ssize_t maxsize = 128;
-  static char *kwlist[] = {"maxsize", "typed", "state"};
+  static char *kwlist[] = {"maxsize", "typed", "state", "unhashable", NULL};
   lruobject *lru;
+  enum unhashable err;
 #if defined(_PY2) || defined (_PY32)
   PyObject *otyped = Py_False;
-  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OOO:lrucache",
-				   kwlist,
-				   &omaxsize, &otyped, &state))
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OOOO:lrucache",
+                                   kwlist,
+                                   &omaxsize, &otyped, &state, &oerr))
     return NULL;
   typed = PyObject_IsTrue(otyped);
   if (typed < -1)
     return NULL;
 #else
-  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OpO:lrucache",
-				   kwlist,
-				   &omaxsize, &typed, &state))
+  if(! PyArg_ParseTupleAndKeywords(args, kwargs, "|OpOO:lrucache",
+                                   kwlist,
+                                   &omaxsize, &typed, &state, &oerr))
     return NULL;
 #endif
   if (omaxsize != Py_False){
@@ -885,7 +932,7 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
 	maxsize = -1;
     }
   }
-    
+
   // ensure state is a list
   if (state != Py_None && !PyList_Check(state)){
     PyErr_SetString(PyExc_TypeError,
@@ -893,22 +940,40 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
     return NULL;
   }
 
+  // check unhashable
+  if (oerr == Py_None)
+    err = FC_EXCEPTION;
+  else{
+#ifdef _PY2
+    if(PyString_Check(oerr))
+      err = process_uh(oerr, PyString_FromString);
+    else
+#endif
+    if(PyUnicode_Check(oerr))
+      err = process_uh(oerr, PyUnicode_FromString);
+    else
+      err = process_uh(NULL, NULL); // set error properly
+  }
+  if (err == FC_FAIL)
+    return NULL;
+
   lru = PyObject_New(lruobject, &lru_type);
   if (lru == NULL)
     return NULL;
-  
+
   lru->maxsize = maxsize;
   lru->state = state;
   lru->typed = typed;
+  lru->err = err;
   Py_INCREF(lru->state);
 
   return (PyObject *) lru;
-  
-  
+
+
 }
 
 static PyMethodDef lrucachemethods[] = {
-  {"lrucache", (PyCFunction) lrucache, METH_VARARGS | METH_KEYWORDS,
+  {"clru_cache", (PyCFunction) lrucache, METH_VARARGS | METH_KEYWORDS,
    lrucache__doc__},
   {NULL, NULL} /* sentinel */
 };
@@ -919,7 +984,7 @@ static PyModuleDef lrucachemodule = {
   "_lrucache",
   "Least Recently Used cache",
   -1,
-  lrucachemethods, 
+  lrucachemethods,
   NULL, NULL, NULL, NULL
 };
 #endif
