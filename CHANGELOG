@@ -1,6 +1,11 @@
-41b2098, Mon Jul 7 20:31:04 2014 -0600 : Added `#ifdef __cplusplus` to support compilation via g++
-410a6b4, Mon Jul 7 14:54:31 2014 -0600 : Update README.md
-39aa6c7, Mon Jul 7 11:01:50 2014 -0600 : added explicit build file build.sh for conda-build
-9c408ae, Mon Jul 7 10:19:07 2014 -0600 : modified meta.yaml
-8ab481c, Mon Jul 7 10:17:07 2014 -0600 : Added __version__
-7d43d1e, Sun Jul 6 22:25:23 2014 -0600 : moved check for maxsize==0 before call to make_key.  Significantly speeds up the nocaching case
+API change:
+
+Default behavior of fastcache is changed to raise TypeError on
+unhashable arguments to be 100% consistent with stdlib.
+
+Introduce a new argument 'unhashable' which controls how fastcache
+responds to unhashable arguments:
+	*'error' (default) - raise TypeError
+	*'warning' - raise UserWarning and call decorated function with args
+	*'ignore'  - call decorated function
+
