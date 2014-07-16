@@ -10,7 +10,7 @@ except TypeError:
         i = step-1
         for j, c in enumerate(itertools.count(start)):
             yield c + i*j
-        
+
 class TestLru_Cache(unittest.TestCase):
     """ Tests for lru_cache. """
 
@@ -75,10 +75,10 @@ class TestLru_Cache(unittest.TestCase):
         for i, j in self.arg_gen(max=1500, repeat=5):
             self.assertEqual(cfunc(i, j, c=i-j), tfunc(i, j, c=i-j))
 
-    def test_hashable_args(self):
+    def test_warn_unhashable_args(self):
         """ Function arguments must be hashable. """
 
-        @lru_cache()
+        @lru_cache(unhashable='warn')
         def f(a, b):
             return (a, ) + (b, )
 
@@ -86,7 +86,24 @@ class TestLru_Cache(unittest.TestCase):
             with self.assertWarns(UserWarning) as cm:
                 self.assertEqual(f([1], 2), f.__wrapped__([1], 2))
         else:
+            #with self.assertRaises(UserWarning) as cm:
             self.assertEqual(f([1], 2), f.__wrapped__([1], 2))
+
+    def test_ignore_unhashable_args(self):
+        """ Function arguments must be hashable. """
+
+        @lru_cache(unhashable='ignore')
+        def f(a, b):
+            return (a, ) + (b, )
+
+        self.assertEqual(f([1], 2), f.__wrapped__([1], 2))
+
+    def test_default_unhashable_args(self):
+        @lru_cache()
+        def f(a, b):
+            return (a, ) + (b, )
+
+        self.assertRaises(TypeError, f, [1], 2)
 
     def test_state_type(self):
         """ State must be a list. """
