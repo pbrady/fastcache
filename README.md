@@ -27,10 +27,21 @@ Manually :
     python setup.py install
 
 Via [conda](http://conda.pydata.org/docs/index.html) :
+  
+  * build latest and greatest github version
 
-    git clone https://github.com/pbrady/fastcache.git
-    conda-build fastcache
-    conda install --use-local fastcache
+```bash  
+git clone https://github.com/pbrady/fastcache.git
+conda-build fastcache
+conda install --use-local fastcache
+```
+
+  * build latest released version on pypi
+```bash
+git clone https://github.com/conda/conda-recipes.git
+conda-build conda-recipes/fastcache
+conda install --use-local fastcache
+```
 
 Test
 ----
