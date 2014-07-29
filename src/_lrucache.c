@@ -995,56 +995,40 @@ static PyModuleDef lrucachemodule = {
 PyMODINIT_FUNC
 #ifdef _PY2
 init_lrucache(void)
+{
+#define _PYINIT_ERROR_RET return
 #else
 PyInit__lrucache(void)
-#endif
 {
   PyObject *m;
+#define _PYINIT_ERROR_RET return NULL
+#endif
 
   lru_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&lru_type) < 0){
-#ifdef _PY2
-    return;
-#else
-    return NULL;
-#endif
-  }
+  if (PyType_Ready(&lru_type) < 0)
+    _PYINIT_ERROR_RET;
+
   cache_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&cache_type) < 0){
-#ifdef _PY2
-    return;
-#else
-    return NULL;
-#endif
-  }
+  if (PyType_Ready(&cache_type) < 0)
+    _PYINIT_ERROR_RET;
 
   hashseq_type.tp_base = &PyList_Type;
-  if (PyType_Ready(&hashseq_type) < 0){
-#ifdef _PY2
-    return;
-#else
-    return NULL;
-#endif
-  }
+  if (PyType_Ready(&hashseq_type) < 0)
+    _PYINIT_ERROR_RET;
 
   clist_type.tp_new = PyType_GenericNew;
-  if (PyType_Ready(&clist_type) < 0){
-#ifdef _PY2
-    return;
-#else
-    return NULL;
-#endif
-  }
+  if (PyType_Ready(&clist_type) < 0)
+    _PYINIT_ERROR_RET;
 
 #ifdef _PY2
-  m = Py_InitModule3("_lrucache", lrucachemethods,
-                       "Least recently used cache.");
+  Py_InitModule3("_lrucache", lrucachemethods,
+                 "Least recently used cache.");
 #else
   m = PyModule_Create(&lrucachemodule);
-
   if (m == NULL)
     return NULL;
 #endif
+
   Py_INCREF(&lru_type);
   Py_INCREF(&cache_type);
   Py_INCREF(&hashseq_type);
