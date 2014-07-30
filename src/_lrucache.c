@@ -8,6 +8,11 @@ extern "C" {
 #if PY_MAJOR_VERSION == 2
 #define _PY2
 typedef long Py_hash_t;
+typedef unsigned long Py_uhash_t;
+#endif
+
+#ifndef _PyHASH_MULTIPLIER
+#define _PyHASH_MULTIPLIER 1000003UL
 #endif
 
 #if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 2
@@ -15,15 +20,13 @@ typedef long Py_hash_t;
 #endif
 
 /* hashseq -- internal *****************************************/
-
 typedef struct {
   PyListObject list;
   Py_hash_t hashvalue;
 } hashseq;
 
-/* hashseq_{traverse, clear, dealloc} are copied from PyListObject
- * are they needed here?
- */
+
+/* hashseq_{traverse, clear, dealloc} are copied from PyListObject */
 static int
 hashseq_traverse(hashseq *self, visitproc visit, void *arg)
 {
@@ -34,6 +37,7 @@ hashseq_traverse(hashseq *self, visitproc visit, void *arg)
   return 0;
 
 }
+
 
 static int
 hashseq_clear(hashseq *self)
@@ -59,6 +63,7 @@ hashseq_clear(hashseq *self)
     return 0;
 }
 
+
 static void
 hashseq_dealloc(hashseq *self)
 {
@@ -82,12 +87,14 @@ hashseq_dealloc(hashseq *self)
   Py_TRASHCAN_SAFE_END(self)
 }
 
+
 /* return precomputed tuple hash for speed */
 static Py_hash_t
 HS_hash(hashseq *self)
 {
   return self->hashvalue;
 }
+
 
 /* copied from PyListObject
  * hashseq's are internal objects which are only compared with
@@ -186,6 +193,7 @@ typedef struct clist{
   PyObject *result;
 } clist;
 
+
 static void
 clist_dealloc(clist *co)
 {
@@ -209,9 +217,9 @@ clist_dealloc(clist *co)
     co->next = NULL;
     Py_TYPE(co)->tp_free(co);
   }
-
   return;
 }
+
 
 static PyTypeObject clist_type = {
   PyVarObject_HEAD_INIT(NULL, 0)
@@ -234,25 +242,8 @@ static PyTypeObject clist_type = {
   0,                       /* tp_setattro */
   0,                       /* tp_as_buffer */
   Py_TPFLAGS_DEFAULT,      /* tp_flags */
-  0,                       /* tp_doc */
-  0,                       /* tp_traverse */
-  0,                       /* tp_clear */
-  0,                      /* tp_richcompare */
-  0,                       /* tp_weaklistoffset */
-  0,                       /* tp_iter */
-  0,                       /* tp_iternext */
-  0,                       /* tp_methods */
-  0,                       /* tp_members */
-  0,                       /* tp_getset */
-  0,                       /* tp_base */
-  0,                       /* tp_dict */
-  0,                       /* tp_descr_get */
-  0,                       /* tp_descr_set */
-  0,                       /* tp_dictoffset */
-  0,                       /* tp_init */
-  0,                       /* tp_alloc */
-  0,                       /* tp_new */
 };
+
 
 static int
 insert_first(clist *root, PyObject *key, PyObject *result){
@@ -273,8 +264,8 @@ insert_first(clist *root, PyObject *key, PyObject *result){
   oldfirst->prev = first;
 
   return 1;
-
 }
+
 
 static PyObject *
 make_first(clist *root, clist *node){
@@ -303,6 +294,7 @@ make_first(clist *root, clist *node){
 /* how will unhashable arguments be handled */
 enum unhashable {FC_ERROR, FC_WARNING, FC_IGNORE, FC_FAIL};
 
+
 typedef struct {
   PyObject_HEAD
   PyObject *fn ; // original function
@@ -319,7 +311,6 @@ typedef struct {
 
 
 #define OFF(x) offsetof(cacheobject, x)
-
 // attributes from wrapped function
 static PyMemberDef cache_memberlist[] = {
   {"__wrapped__", T_OBJECT, OFF(fn), RESTRICTED | READONLY},
@@ -330,6 +321,8 @@ static PyMemberDef cache_memberlist[] = {
   {"__dict__", T_OBJECT, OFF(func_dict), 0},
   {NULL} /* Sentinel */
 };
+
+
 // getsetters from wrapped function
 static PyObject *
 cache_get_doc(cacheobject * co, void *closure)
@@ -340,6 +333,7 @@ cache_get_doc(cacheobject * co, void *closure)
 
   return Py_INCREF(fn->func_doc), fn->func_doc;
 }
+
 
 static PyGetSetDef cache_getset[] = {
   {"__doc__", (getter)cache_get_doc, NULL, NULL, NULL},
@@ -362,6 +356,7 @@ cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
 #endif
 }
 
+
 static void cache_dealloc(cacheobject *co)
 {
   Py_CLEAR(co->fn);
@@ -378,10 +373,37 @@ static void cache_dealloc(cacheobject *co)
 
 }
 
+
+/* copied for tuplehash */
+static Py_hash_t
+hashseq_arghash(hashseq *hs, Py_ssize_t len)
+{
+  PyListObject *v = (PyListObject *)hs;
+  Py_uhash_t x;  /* Unsigned for defined overflow behavior. */
+  Py_hash_t y;
+  PyObject **p;
+  Py_uhash_t mult = _PyHASH_MULTIPLIER;
+  x = 0x345678UL;
+  p = v->ob_item;
+  while (--len >= 0) {
+    y = PyObject_Hash(*p++);
+    if (y == -1)
+      return -1;
+    x = (x ^ y) * mult;
+    /* the cast might truncate len; that doesn't change hash stability */
+    mult += (Py_hash_t)(82520UL + len + len);
+  }
+  x += 97531UL;
+  if (x == (Py_uhash_t)-1)
+    x = -2;
+  return x;
+}
+
+
 static PyObject *
 make_key(cacheobject *co, PyObject *args, PyObject *kw)
 {
-  PyObject *tup, *item, *keys, *key;
+  PyObject *item, *keys, *key;
   Py_ssize_t ex_size = 0;
   Py_ssize_t arg_size = 0;
   Py_ssize_t kw_size = 0;
@@ -470,26 +492,17 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
 
   }
 
-  tup = PyList_AsTuple((PyObject *)hs);
-  if (tup == NULL){
-    Py_DECREF(hs);
-    return NULL;
-  }
-  /* set hashvalue */
-  hs->hashvalue = PyTuple_Type.tp_hash(tup);
-  /* DECREF tup before checking hash */
-  Py_DECREF(tup);
-  /*and handle case of err == exception */
-  if( hs->hashvalue == -1){
-    if (co->err == FC_ERROR)
-      return NULL;
-    else
-      PyErr_Clear();
-  }
-
+  hs->hashvalue = hashseq_arghash(hs, size);
   return (PyObject *)hs;
 }
 
+
+/***********************************************************
+ * All calls to the cached function go through cache_call
+ * Handles: (1) Generation of key (via make_key)
+ *          (2) Maintenance of circular doubly linked list
+ *          (3) Actual updates to cache dictionary
+ ***********************************************************/
 static PyObject *
 cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 {
@@ -502,19 +515,24 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   }
 
   /* generate a key from hashing the arguments */
-  key = make_key(co,args,kw);
+  key = make_key(co, args, kw);
   if (key == NULL)
     return NULL;
 
   /* check for unhashable type, error has already been cleared in make_key */
   if ( ((hashseq *)key)->hashvalue == -1){
     Py_DECREF(key);
+    if (co->err == FC_ERROR)
+      return NULL;
+    else
+      PyErr_Clear();
     if (co->err == FC_WARNING)
       // try to issue warning
       if( PyErr_WarnEx(PyExc_UserWarning,
                        "Unhashable arguments cannot be cached",1) < 0){
         // warning becomes exception
-        PyErr_SetString(PyExc_TypeError, "Cached function arguments must be hashable");
+        PyErr_SetString(PyExc_TypeError,
+                        "Cached function arguments must be hashable");
         return NULL;
       }
     co->misses++;
@@ -590,6 +608,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   }
 }
 
+
 PyDoc_STRVAR(cacheclear__doc__,
 "cache_clear(self)\n\
 \n\
@@ -605,6 +624,7 @@ cache_clear(PyObject *self)
 
   Py_RETURN_NONE;
 }
+
 
 PyDoc_STRVAR(cacheinfo__doc__,
 "cache_info(self)\n\
@@ -631,8 +651,10 @@ static PyMethodDef cache_methods[] = {
   {NULL, NULL} /* sentinel */
 };
 
+
 PyDoc_STRVAR(fn_doc,
 	     "Cached function.");
+
 
 static PyTypeObject cache_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -678,13 +700,12 @@ static PyTypeObject cache_type = {
 };
 
 
-
-
-/***********************************************************
- LRU cache returns a simple callable which will take a function
- as an argument
-************************************************************/
-
+/* lruobject -
+ * the callable object returned by lrucache(all, my, cache, args)
+ * [lrucache is known as clru_cache in python land]
+ * records arguments to clru_cache and passes them along to the
+ * cacheobject created when lruobject is called with a function
+ * as an argument */
 typedef struct {
   PyObject_HEAD
   Py_ssize_t maxsize;
@@ -693,11 +714,13 @@ typedef struct {
   enum unhashable err;
 } lruobject;
 
+
 static void lru_dealloc(lruobject *lru)
 {
   Py_CLEAR(lru->state);
   Py_TYPE(lru)->tp_free(lru);
 }
+
 
 static PyObject *
 get_func_attr(PyObject *fo, const char *name)
@@ -711,6 +734,7 @@ get_func_attr(PyObject *fo, const char *name)
     return attr;
   }
 }
+
 
 /* takes a function as an argument and returns a cacheobject */
 static PyObject *
@@ -785,6 +809,7 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   return (PyObject *)co;
 }
 
+
 static PyTypeObject lru_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     "fastcache.lru",                /* tp_name */
@@ -807,26 +832,8 @@ static PyTypeObject lru_type = {
     0,                                  /* tp_setattro */
     0,                                  /* tp_as_buffer */
     Py_TPFLAGS_DEFAULT ,                /* tp_flags */
-    0,                                  /* tp_doc */
-    0,                                  /* tp_traverse */
-    0,                                  /* tp_clear */
-    0,                                  /* tp_richcompare */
-    0,                                  /* tp_weaklistoffset */
-    0,                                  /* tp_iter */
-    0,                                  /* tp_iternext */
-    0,                                  /* tp_methods */
-    0,                                  /* tp_members */
-    0,                                  /* tp_getset */
-    0,                                  /* tp_base */
-    0,                                  /* tp_dict */
-    0,                                  /* tp_descr_get */
-    0,                                  /* tp_descr_set */
-    0,                                  /* tp_dictoffset */
-    0,                                  /* tp_init */
-    0,                                  /* tp_alloc */
-    0,                                  /* tp_new */
-    0,                                  /* tp_free */
 };
+
 
 /* helper function for processing 'unhashable' */
 enum unhashable
@@ -859,6 +866,7 @@ process_uh(PyObject *arg, PyObject *(*f)(const char *))
                   "Argument <unhashable> must be 'error', 'warning', or 'ignore'");
   return FC_FAIL;
 }
+
 
 /* LRU cache decorator */
 PyDoc_STRVAR(lrucache__doc__,
@@ -968,15 +976,15 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   Py_INCREF(lru->state);
 
   return (PyObject *) lru;
-
-
 }
+
 
 static PyMethodDef lrucachemethods[] = {
   {"clru_cache", (PyCFunction) lrucache, METH_VARARGS | METH_KEYWORDS,
    lrucache__doc__},
   {NULL, NULL} /* sentinel */
 };
+
 
 #ifndef _PY2
 static PyModuleDef lrucachemodule = {
@@ -988,6 +996,7 @@ static PyModuleDef lrucachemodule = {
   NULL, NULL, NULL, NULL
 };
 #endif
+
 
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
