@@ -1,5 +1,8 @@
 from distutils.core import setup, Extension
 import sys
+from distutils.command.build import build as _build
+from distutils.command.install import install as _install
+from distutils.command.build_ext import build_ext as _build_ext
 
 vinfo = sys.version_info[:2]
 if vinfo < (2, 6):
@@ -99,6 +102,90 @@ Provides 2 Least Recently Used caching function decorators:
       See:  http://en.wikipedia.org/wiki/Cache_algorithms#Least_Recently_Used
 '''
 
+# the overall logic here is that by default macros can be only be passed if
+# one does 'python setup.py build_ext --define=MYMACRO'
+# If one attempts 'build' or 'install' with the --define flag, an error will
+# appear saying that --define is not an option
+# To get around this issue, we subclass build and install to capture --define
+# as well as build_ext which will use the --define arguments passed to
+# build or install
+
+define_opts = []
+
+class BuildWithDefine(_build):
+
+    _build_opts = _build.user_options
+    user_options = [
+        ('define=', 'D',
+         "C preprocessor macros to define"),
+    ]
+    user_options.extend(_build_opts)
+
+    def initialize_options(self):
+        _build.initialize_options(self)
+        self.define = None
+
+    def finalize_options(self):
+        _build.finalize_options(self)
+        # The argument parsing will result in self.define being a string, but
+        # it has to be a list of 2-tuples.  All the preprocessor symbols
+        # specified by the 'define' option without an '=' will be set to '1'.
+        # Multiple symbols can be separated with commas.
+        if self.define:
+            defines = self.define.split(',')
+            self.define = [(s.strip(), 1) if '=' not in s else
+                           tuple(ss.strip() for ss in s.split('='))
+                           for s in defines]
+            define_opts.extend(self.define)
+
+    def run(self):
+        _build.run(self)
+
+class InstallWithDefine(_install):
+
+    _install_opts = _install.user_options
+    user_options = [
+        ('define=', 'D',
+         "C preprocessor macros to define"),
+    ]
+    user_options.extend(_install_opts)
+
+    def initialize_options(self):
+        _install.initialize_options(self)
+        self.define = None
+
+    def finalize_options(self):
+        _install.finalize_options(self)
+        # The argument parsing will result in self.define being a string, but
+        # it has to be a list of 2-tuples.  All the preprocessor symbols
+        # specified by the 'define' option without an '=' will be set to '1'.
+        # Multiple symbols can be separated with commas.
+        if self.define:
+            defines = self.define.split(',')
+            self.define = [(s.strip(), 1) if '=' not in s else
+                           tuple(ss.strip() for ss in s.split('='))
+                           for s in defines]
+            define_opts.extend(self.define)
+
+    def run(self):
+        _install.run(self)
+
+class BuildExt(_build_ext):
+
+    def initialize_options(self):
+        _build_ext.initialize_options(self)
+
+    def finalize_options(self):
+        _build_ext.finalize_options(self)
+        if self.define is not None:
+            self.define.extend(define_opts)
+        elif define_opts:
+            self.define = define_opts
+
+    def run(self):
+        _build_ext.run(self)
+
+
 setup(name = "fastcache",
       version = "0.4.0",
       description = "C implementation of Python 3 functools.lru_cache",
@@ -110,5 +197,10 @@ setup(name = "fastcache",
       packages = ["fastcache", "fastcache.tests"],
       ext_modules = [Extension("fastcache._lrucache",["src/_lrucache.c"])],
       classifiers = classifiers,
+      cmdclass={
+          'build' : BuildWithDefine,
+          'install' : InstallWithDefine,
+          'build_ext' : BuildExt,
+      }
 
-  )
+)
