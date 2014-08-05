@@ -389,17 +389,18 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     item = PyList_GET_ITEM(co->ex_state, i);
     hashseq_INCSET_ITEM(hs, i, item);
   }
+  off = ex_size;
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
     item = PyTuple_GET_ITEM(args, i);
-    hashseq_INCSET_ITEM(hs, i, item);
+    hashseq_INCSET_ITEM(hs, off+i, item);
   }
-  off = ex_size + arg_size;
+  off += arg_size;
   // incorporate type
   if (co->typed){
     for(i = 0; i < arg_size; i++){
       item = (PyObject *)Py_TYPE(PyTuple_GET_ITEM(args, i));
-      hashseq_INCSET_ITEM(hs, i, item);
+      hashseq_INCSET_ITEM(hs, off+i, item);
     }
     off += arg_size;
   }
@@ -957,7 +958,7 @@ PyInit__lrucache(void)
   if (PyType_Ready(&cache_type) < 0)
     _PYINIT_ERROR_RET;
 
-  hashseq_type.tp_base = &PyList_Type;
+  hashseq_type.tp_new = PyType_GenericNew;
   if (PyType_Ready(&hashseq_type) < 0)
     _PYINIT_ERROR_RET;
 
