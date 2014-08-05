@@ -19,78 +19,40 @@ typedef unsigned long Py_uhash_t;
 #define _PY32
 #endif
 
-/* hashseq -- internal *****************************************/
+/* hashseq -- internal object
+ * we could subclass PyListObject here but since we are redefining
+ * the richcompare routines, using custom initialization and know
+ * that there will never be a self-referencing instance we can skip
+ * the PyObject_GC machinery and hopefully save some time/space.
+ * Note that by not participating in cyclic garbage collection
+ * we can't use the Py_TRASHCAN_SAFE macros during dealloction.
+ * If this doesn't work, add PyObject_GC machinery */
 typedef struct {
-  PyListObject list;
+  PyObject_VAR_HEAD
+  PyObject **ob_item;
   Py_hash_t hashvalue;
 } hashseq;
-
-
-/* hashseq_{traverse, clear, dealloc} are copied from PyListObject */
-static int
-hashseq_traverse(hashseq *self, visitproc visit, void *arg)
-{
-  Py_ssize_t i;
-
-  for (i = Py_SIZE(self); --i >= 0; )
-    Py_VISIT(((PyListObject *)self)->ob_item[i]);
-  return 0;
-
-}
-
-
-static int
-hashseq_clear(hashseq *self)
-{
-    Py_ssize_t i;
-    PyListObject *a = (PyListObject *)self;
-    PyObject **item = a->ob_item;
-    if (item != NULL) {
-        /* Because XDECREF can recursively invoke operations on
-           this list, we make it empty first. */
-        i = Py_SIZE(a);
-        Py_SIZE(a) = 0;
-        a->ob_item = NULL;
-        a->allocated = 0;
-        while (--i >= 0) {
-            Py_XDECREF(item[i]);
-        }
-        PyMem_FREE(item);
-    }
-    /* Never fails; the return value can be ignored.
-       Note that there is no guarantee that the list is actually empty
-       at this point, because XDECREF may have populated it again! */
-    return 0;
-}
 
 
 static void
 hashseq_dealloc(hashseq *self)
 {
-  PyListObject *lo;
   Py_ssize_t i;
 
-  lo = (PyListObject *)self;
-
-  PyObject_GC_UnTrack(self);
-  Py_TRASHCAN_SAFE_BEGIN(self);
-
-  if (lo->ob_item != NULL){
-    i = Py_SIZE(lo);
+  if (self->ob_item != NULL){
+    i = Py_SIZE(self);
     while(--i >=0) {
-      Py_XDECREF(lo->ob_item[i]);
+      Py_XDECREF(self->ob_item[i]);
     }
-    PyMem_FREE(lo->ob_item);
+    PyMem_FREE(self->ob_item);
   }
   Py_TYPE(self)->tp_free((PyObject *)self);
-
-  Py_TRASHCAN_SAFE_END(self)
 }
 
 
 /* return precomputed tuple hash for speed */
 static Py_hash_t
-HS_hash(hashseq *self)
+hashseq_hash(hashseq *self)
 {
   return self->hashvalue;
 }
@@ -103,8 +65,9 @@ HS_hash(hashseq *self)
 static PyObject *
 hashseq_richcompare(PyObject *v, PyObject *w, int op)
 {
-    PyListObject *vl, *wl;
     Py_ssize_t i;
+    hashseq *vh = (hashseq *)v;
+    hashseq *wh = (hashseq *)w;
 
     // should never happen
     if (op != Py_EQ){
@@ -112,18 +75,15 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
       return NULL;
     }
 
-    vl = (PyListObject *)v;
-    wl = (PyListObject *)w;
-
-    if (Py_SIZE(vl) != Py_SIZE(wl)) {
+    if (Py_SIZE(vh) != Py_SIZE(wh)) {
         /* Shortcut: if the lengths differ, the lists differ */
       return Py_INCREF(Py_False), Py_False;
     }
 
     /* Search for the first index where items are different */
-    for (i = 0; i < Py_SIZE(vl) && i < Py_SIZE(wl); i++) {
-        int k = PyObject_RichCompareBool(vl->ob_item[i],
-                                         wl->ob_item[i], Py_EQ);
+    for (i = 0; i < Py_SIZE(vh); i++) {
+        int k = PyObject_RichCompareBool(vh->ob_item[i],
+                                         wh->ob_item[i], Py_EQ);
         if (k < 0)
           return NULL;
         if (!k)
@@ -149,33 +109,17 @@ static PyTypeObject hashseq_type = {
   0,                            /* tp_as_number */
   0,                            /* tp_as_sequence */
   0,                            /* tp_as_mapping */
-  (hashfunc)HS_hash,            /* tp_hash */
+  (hashfunc)hashseq_hash,       /* tp_hash */
   0,                            /* tp_call */
   0,                            /* tp_str */
   0,                            /* tp_getattro */
   0,                            /* tp_setattro */
   0,                            /* tp_as_buffer */
-  Py_TPFLAGS_DEFAULT |
-  Py_TPFLAGS_HAVE_GC,             /* tp_flags */
-  0,                              /* tp_doc */
-  (traverseproc)hashseq_traverse, /* tp_traverse */
-  (inquiry)hashseq_clear,         /* tp_clear */
-  hashseq_richcompare,     /* tp_richcompare */
-  0,                       /* tp_weaklistoffset */
-  0,                       /* tp_iter */
-  0,                       /* tp_iternext */
-  0,                       /* tp_methods */
-  0,                       /* tp_members */
-  0,                       /* tp_getset */
-  0,                       /* tp_base */
-  0,                       /* tp_dict */
-  0,                       /* tp_descr_get */
-  0,                       /* tp_descr_set */
-  0,                       /* tp_dictoffset */
-  0,                       /* tp_init */
-  0,                       /* tp_alloc */
-  0,                       /* tp_new */
-  PyObject_GC_Del,         /* tp_free */
+  Py_TPFLAGS_DEFAULT,           /* tp_flags */
+  0,                            /* tp_doc */
+  0,                            /* tp_traverse */
+  0,                            /* tp_clear */
+  hashseq_richcompare,          /* tp_richcompare */
 };
 
 /***************************************************
@@ -325,9 +269,9 @@ static PyMemberDef cache_memberlist[] = {
 
 // getsetters from wrapped function
 static PyObject *
-cache_get_doc(cacheobject * co, void *closure)
+cache_get_doc(cacheobject *co, void *closure)
 {
-  PyFunctionObject * fn = (PyFunctionObject *) co->fn;
+  PyFunctionObject *fn = (PyFunctionObject *) co->fn;
   if (fn->func_doc == NULL)
     Py_RETURN_NONE;
 
@@ -378,13 +322,12 @@ static void cache_dealloc(cacheobject *co)
 static Py_hash_t
 hashseq_arghash(hashseq *hs, Py_ssize_t len)
 {
-  PyListObject *v = (PyListObject *)hs;
   Py_uhash_t x;  /* Unsigned for defined overflow behavior. */
   Py_hash_t y;
   PyObject **p;
   Py_uhash_t mult = _PyHASH_MULTIPLIER;
   x = 0x345678UL;
-  p = v->ob_item;
+  p = hs->ob_item;
   while (--len >= 0) {
     y = PyObject_Hash(*p++);
     if (y == -1)
@@ -399,18 +342,19 @@ hashseq_arghash(hashseq *hs, Py_ssize_t len)
   return x;
 }
 
+/* assumes op is hashseq* */
+#define hashseq_INCSET_ITEM(op, i, v) (Py_INCREF(v), op->ob_item[i] = (v))
 
 static PyObject *
 make_key(cacheobject *co, PyObject *args, PyObject *kw)
 {
   PyObject *item, *keys, *key;
-  Py_ssize_t ex_size = 0;
-  Py_ssize_t arg_size = 0;
-  Py_ssize_t kw_size = 0;
-  Py_ssize_t i,size,off;
+  Py_ssize_t ex_size, arg_size, kw_size;
+  Py_ssize_t i, size, off;
   size_t nbytes;
   hashseq *hs;
-  PyListObject *lo;
+
+  ex_size = arg_size = kw_size = 0;
 
   // determine size of arguments and types
   if (PyList_Check(co->ex_state))
@@ -421,7 +365,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     kw_size = PyDict_Size(kw);
 
   // allocate hashseq
-  hs = PyObject_GC_New(hashseq, &hashseq_type);
+  hs = PyObject_New(hashseq, &hashseq_type);
   if( hs == NULL)
     return NULL;
   // total size
@@ -429,38 +373,34 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     size = ex_size+2*arg_size+3*kw_size;
   else
     size = ex_size+arg_size+2*kw_size;
-  // cast hashseq to list and initialize
-  lo = (PyListObject *) hs;
+  // allocate ob_item and initialize
   nbytes = size * sizeof(PyObject *);
-  lo->ob_item = (PyObject **) PyMem_MALLOC(nbytes);
-  if(lo->ob_item == NULL){
+  hs->ob_item = (PyObject **) PyMem_MALLOC(nbytes);
+  if(hs->ob_item == NULL){
     Py_DECREF(hs);
     return PyErr_NoMemory();
   }
-  memset(lo->ob_item, 0, nbytes);
+  memset(hs->ob_item, 0, nbytes);
 
-  Py_SIZE(lo) = size;
-  lo->allocated = size;
-  _PyObject_GC_TRACK(hs);
+  Py_SIZE(hs) = size;
+
   // incorporate extra state
   for(i = 0; i < ex_size; i++){
     item = PyList_GET_ITEM(co->ex_state, i);
-    Py_INCREF(item);
-    PyList_SET_ITEM((PyObject *)hs, i, item);
+    hashseq_INCSET_ITEM(hs, i, item);
   }
+  off = ex_size;
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
     item = PyTuple_GET_ITEM(args, i);
-    Py_INCREF(item);
-    PyList_SET_ITEM((PyObject *)hs, ex_size+i, item);
+    hashseq_INCSET_ITEM(hs, off+i, item);
   }
-  off = ex_size + arg_size;
+  off += arg_size;
   // incorporate type
   if (co->typed){
     for(i = 0; i < arg_size; i++){
       item = (PyObject *)Py_TYPE(PyTuple_GET_ITEM(args, i));
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, off+i, item);
+      hashseq_INCSET_ITEM(hs, off+i, item);
     }
     off += arg_size;
   }
@@ -475,18 +415,15 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     for(i = 0; i < kw_size; i++){
       key = PyList_GET_ITEM(keys, i);
       item = PyDict_GetItem(kw, key);
-      Py_INCREF(key);
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, off+2*i  , key);
-      PyList_SET_ITEM((PyObject *)hs, off+2*i+1, item);
+      hashseq_INCSET_ITEM(hs, off+2*i  , key);
+      hashseq_INCSET_ITEM(hs, off+2*i+1, item);
     }
     Py_DECREF(keys);
     // type info
     if (co->typed){
       for(i = 0; i < kw_size; i++){
 	item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
-	Py_INCREF(item);
-	PyList_SET_ITEM((PyObject *)hs, off+2*kw_size+i, item);
+	hashseq_INCSET_ITEM(hs, off+2*kw_size+i, item);
       }
     }
 
@@ -1021,7 +958,7 @@ PyInit__lrucache(void)
   if (PyType_Ready(&cache_type) < 0)
     _PYINIT_ERROR_RET;
 
-  hashseq_type.tp_base = &PyList_Type;
+  hashseq_type.tp_new = PyType_GenericNew;
   if (PyType_Ready(&hashseq_type) < 0)
     _PYINIT_ERROR_RET;
 
