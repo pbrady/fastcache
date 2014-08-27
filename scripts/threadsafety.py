@@ -3,11 +3,11 @@ from __future__ import division
 """The Python interpreter may switch between threads inbetween bytecode
 execution.  Bytecode execution in fastcache may occur during:
 (1) Calls to make_key which will call the __hash__ methods of the args and
-(2) `PyDict_Get(Set)Item` calls relies on Python comparisons (i.e, __eq__)
-    to determine a match has been found
+(2) `PyDict_Get(Set)Item` calls rely on Python comparisons (i.e, __eq__)
+    to determine if a match has been found
 
 A good test for threadsafety is then to cache a function which takes user
-defined Python objects with have __hash__ and __eq__ methods which live in
+defined Python objects that have __hash__ and __eq__ methods which live in
 Python land rather built-in land.
 
 The test should not only ensure that the correct result is acheived (and no
@@ -48,7 +48,7 @@ def fib(n):
 RESULT = fib(PythonInt(FIB))
 
 def run_fib(r):
-    """ Run fibonacci generator r times. """
+    """ Run Fibonacci generator r times. """
     for i in range(r):
         if randint(RAND_MIN, RAND_MAX) == RAND_MIN:
             fib.cache_clear()
@@ -69,7 +69,7 @@ def run_test(n, r, i):
 import argparse
 
 def main():
-    parser = argparse.ArgumentParser(description='Run threadysafety test.')
+    parser = argparse.ArgumentParser(description='Run threadsafety test.')
     parser.add_argument('-n,--numthreads',
                         type=int,
                         default=2,
@@ -92,5 +92,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-else:
-    run_test(n=2, r=5000)
