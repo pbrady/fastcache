@@ -64,6 +64,25 @@ class TestCLru_Cache(unittest.TestCase):
         for i, j in self.arg_gen(max=75, repeat=5):
             self.assertEqual(cfunc(i, j), tfunc(i, j))
 
+        # test dict state
+        d = {}
+        cfunc = lru_cache(maxsize=100, state=d)(tfunc)
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 1)
+        d['a'] = 42
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 2)
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 2)
+        self.assertEqual(cfunc.cache_info().hits, 1)
+        d.clear()
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 2)
+        self.assertEqual(cfunc.cache_info().hits, 2)
+        d['a'] = 44
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 3)
+
     def test_memory_leaks(self):
         """ Longer running test to check for memory leaks. """
 

@@ -7,7 +7,7 @@ Passes all tests in the standard library for functools.lru_cache.
 
 Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 enhancements:
 
-1.  An additional argument `state` may be supplied which must be a `list`.  This allows one to safely cache functions for which the result depends on some context which is not a part of the function call signature.
+1.  An additional argument `state` may be supplied which must be a `list` or `dict`.  This allows one to safely cache functions for which the result depends on some context which is not a part of the function call signature.
 2.  An additional argument `unhashable` may be supplied to control how the cached function responds to unhashable arguments.  The options are:
   *  "error" (default) - Raise a `TypeError`
   *  "warning"         - Raise a `UserWarning` and call the wrapped function with the supplied arguments.
