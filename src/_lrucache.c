@@ -407,14 +407,19 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   Py_ssize_t ex_size = 0;
   Py_ssize_t arg_size = 0;
   Py_ssize_t kw_size = 0;
-  Py_ssize_t i,size,off;
+  Py_ssize_t i, size, off;
   size_t nbytes;
   hashseq *hs;
   PyListObject *lo;
+  int is_list = 1;
 
   // determine size of arguments and types
   if (PyList_Check(co->ex_state))
     ex_size = Py_SIZE(co->ex_state);
+  else if (PyDict_CheckExact(co->ex_state)){
+    is_list = 0;
+    ex_size = PyDict_Size(co->ex_state);
+  }
   if (args != NULL && PyTuple_CheckExact(args))
     arg_size = PyTuple_GET_SIZE(args);
   if (kw != NULL && PyDict_CheckExact(kw))
@@ -443,11 +448,30 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   lo->allocated = size;
   _PyObject_GC_TRACK(hs);
   // incorporate extra state
-  for(i = 0; i < ex_size; i++){
-    item = PyList_GET_ITEM(co->ex_state, i);
-    Py_INCREF(item);
-    PyList_SET_ITEM((PyObject *)hs, i, item);
+  if(is_list){
+    for(i = 0; i < ex_size; i++){
+      item = PyList_GET_ITEM(co->ex_state, i);
+      Py_INCREF(item);
+      PyList_SET_ITEM((PyObject *)hs, i, item);
+    }
   }
+  else if(ex_size > 0){
+    keys = PyDict_Keys(co->ex_state);
+    if( PyList_Sort(keys) < 0){
+      Py_DECREF(hs);
+      return NULL;
+    }
+    for(i = 0; i < ex_size; i++){
+      key = PyList_GET_ITEM(keys, i);
+      item = PyDict_GetItem(co->ex_state, key);
+      Py_INCREF(key);
+      Py_INCREF(item);
+      PyList_SET_ITEM((PyObject *)hs, 2*i  , key);
+      PyList_SET_ITEM((PyObject *)hs, 2*i+1, item);
+    }
+    Py_DECREF(keys);
+  }
+
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
     item = PyTuple_GET_ITEM(args, i);
@@ -877,7 +901,7 @@ PyDoc_STRVAR(lrucache__doc__,
 "If *typed* is True, arguments of different types will be cached\n"
 "separately.  For example, f(3.0) and f(3) will be treated as distinct\n"
 "calls with distinct results.\n\n"
-"If *state* is a list, the items in the list will be incorporated into\n"
+"If *state* is a list or dict, the items will be incorporated into\n"
 "argument hash.\n\n"
 "The result of calling the cached function with unhashable (mutable)\n"
 "arguments depends on the value of *unhashable*:\n\n"
@@ -926,25 +950,25 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
     else if (PyInt_Check(omaxsize)){
       maxsize = PyInt_AsSsize_t(omaxsize);
       if (maxsize < 0)
-	maxsize = -1;
+        maxsize = -1;
     }
 #endif
     else {
       if( ! PyLong_Check(omaxsize)){
-	PyErr_SetString(PyExc_TypeError,
-			"Argument <maxsize> must be an int.");
-	return NULL;
+        PyErr_SetString(PyExc_TypeError,
+                        "Argument <maxsize> must be an int.");
+        return NULL;
       }
       maxsize = PyLong_AsSsize_t(omaxsize);
       if (maxsize < 0)
-	maxsize = -1;
+        maxsize = -1;
     }
   }
 
-  // ensure state is a list
-  if (state != Py_None && !PyList_Check(state)){
+  // ensure state is a list or dict
+  if (state != Py_None && !(PyList_Check(state) || PyDict_CheckExact(state))){
     PyErr_SetString(PyExc_TypeError,
-		    "Argument <state> must be a list.");
+		    "Argument <state> must be a list or dict.");
     return NULL;
   }
 

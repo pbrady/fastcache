@@ -21,7 +21,7 @@ lru_cache  - python wrapper around clru_cache (slower)
            >>> <class 'function'>
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.0-git"
 
 
 from ._lrucache import clru_cache
@@ -37,7 +37,7 @@ def lru_cache(maxsize=128, typed=False, state=None, unhashable='error'):
     separately. For example, f(3.0) and f(3) will be treated as distinct
     calls with distinct results.
 
-    If *state* is a list, the items in the list will be incorporated into
+    If *state* is a list or dict, the items will be incorporated into
     argument hash.
 
     The result of calling the cached function with unhashable (mutable)
