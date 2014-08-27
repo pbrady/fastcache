@@ -431,9 +431,9 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     return NULL;
   // total size
   if (co->typed)
-    size = ex_size+2*arg_size+3*kw_size;
+    size = (2-is_list)*ex_size+2*arg_size+3*kw_size;
   else
-    size = ex_size+arg_size+2*kw_size;
+    size = (2-is_list)*ex_size+arg_size+2*kw_size;
   // cast hashseq to list and initialize
   lo = (PyListObject *) hs;
   nbytes = size * sizeof(PyObject *);
@@ -471,14 +471,15 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     }
     Py_DECREF(keys);
   }
+  off = (2-is_list)*ex_size;
 
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
     item = PyTuple_GET_ITEM(args, i);
     Py_INCREF(item);
-    PyList_SET_ITEM((PyObject *)hs, ex_size+i, item);
+    PyList_SET_ITEM((PyObject *)hs, off+i, item);
   }
-  off = ex_size + arg_size;
+  off += arg_size;
   // incorporate type
   if (co->typed){
     for(i = 0; i < arg_size; i++){

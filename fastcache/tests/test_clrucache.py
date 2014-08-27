@@ -79,6 +79,9 @@ class TestCLru_Cache(unittest.TestCase):
         cfunc(1, 2)
         self.assertEqual(cfunc.cache_info().misses, 2)
         self.assertEqual(cfunc.cache_info().hits, 2)
+        d['a'] = 44
+        cfunc(1, 2)
+        self.assertEqual(cfunc.cache_info().misses, 3)
 
     def test_memory_leaks(self):
         """ Longer running test to check for memory leaks. """
