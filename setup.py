@@ -38,7 +38,7 @@ Provides 2 Least Recently Used caching function decorators:
   clru_cache - built-in (faster)
              >>> from fastcache import clru_cache, __version__
              >>> __version__
-             '0.4.0'
+             '0.4.1'
              >>> @clru_cache(maxsize=325, typed=False)
              ... def fib(n):
              ...     """Terrible Fibonacci number generator."""
@@ -79,7 +79,7 @@ Provides 2 Least Recently Used caching function decorators:
       For example, f(3.0) and f(3) will be treated as distinct calls with
       distinct results.
 
-      If *state* is a list, the items in the list will be incorporated into
+      If *state* is a list or dict, the items will be incorporated into the
       argument hash.
 
       The result of calling the cached function with unhashable (mutable)
@@ -187,7 +187,7 @@ class BuildExt(_build_ext):
 
 
 setup(name = "fastcache",
-      version = "0.4.0-git",
+      version = "0.4.1",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = long_description,
       author = "Peter Brady",

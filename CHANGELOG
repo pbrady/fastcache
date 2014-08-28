@@ -1,3 +1,11 @@
+*0.4.1*
+
+- The 'state' argument to clru_cache can now be a list or a dict
+- Slight performance improvemants
+- Fixed compiler warnings for Python 2 builds
+
+*0.4.0*
+
 API change:
 
 Default behavior of fastcache is changed to raise TypeError on
