@@ -4,6 +4,10 @@ from distutils.command.build import build as _build
 from distutils.command.install import install as _install
 from distutils.command.build_ext import build_ext as _build_ext
 
+if 'pip' in __file__:
+    from setuptools import setup
+    from setuptools.command.install import install as _install
+
 vinfo = sys.version_info[:2]
 if vinfo < (2, 6):
     print("Fastcache currently requires Python 2.6 or newer.  "+
