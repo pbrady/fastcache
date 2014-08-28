@@ -1,12 +1,32 @@
-from distutils.core import setup, Extension
 import sys
-from distutils.command.build import build as _build
-from distutils.command.install import install as _install
-from distutils.command.build_ext import build_ext as _build_ext
+from os import getenv
 
-if 'pip' in __file__:
-    from setuptools import setup
-    from setuptools.command.install import install as _install
+# use setuptools by default as per the official advice at:
+# packaging.python.org/en/latest/current.html#packaging-tool-recommendations
+use_setuptools = True
+# set the environment variable USE_DISTUTILS=True to force the use of distutils
+use_distutils = getenv('USE_DISTUTILS')
+if use_distutils is not None:
+    if use_distutils.lower() == 'true':
+        use_setuptools = False
+    else:
+        print("Value {} for USE_DISTUTILS treated as False".\
+              format(use_distutils))
+
+from distutils.command.build import build as _build
+
+if use_setuptools:
+    try:
+        from setuptools import setup, Extension
+        from setuptools.command.install import install as _install
+        from setuptools.command.build_ext import build_ext as _build_ext
+    except ImportError:
+        use_setuptools = False
+
+if not use_setuptools:
+    from distutils.core import setup, Extension
+    from distutils.command.install import install as _install
+    from distutils.command.build_ext import build_ext as _build_ext
 
 vinfo = sys.version_info[:2]
 if vinfo < (2, 6):
@@ -42,7 +62,7 @@ Provides 2 Least Recently Used caching function decorators:
   clru_cache - built-in (faster)
              >>> from fastcache import clru_cache, __version__
              >>> __version__
-             '0.4.1'
+             '0.4.2'
              >>> @clru_cache(maxsize=325, typed=False)
              ... def fib(n):
              ...     """Terrible Fibonacci number generator."""
@@ -191,7 +211,7 @@ class BuildExt(_build_ext):
 
 
 setup(name = "fastcache",
-      version = "0.4.1",
+      version = "0.4.2",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = long_description,
       author = "Peter Brady",

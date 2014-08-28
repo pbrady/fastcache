@@ -1,8 +1,10 @@
-*0.4.1*
+*0.4.2*
 
 - The 'state' argument to clru_cache can now be a list or a dict
 - Slight performance improvemants
 - Fixed compiler warnings for Python 2 builds
+- Use setuptools by default.  The environment variable USE_DISTUTILS=True
+  forces the use of distutils
 
 *0.4.0*
 
