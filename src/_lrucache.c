@@ -108,7 +108,8 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
 
     // should never happen
     if (op != Py_EQ){
-      PyErr_SetString(PyExc_TypeError, "HashSeq object only support == comparison.");
+      PyErr_SetString(PyExc_TypeError,
+                      "HashSeq object only support == comparison.");
       return NULL;
     }
 
@@ -509,9 +510,9 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     // type info
     if (co->typed){
       for(i = 0; i < kw_size; i++){
-	item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
-	Py_INCREF(item);
-	PyList_SET_ITEM((PyObject *)hs, off+2*kw_size+i, item);
+        item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
+        Py_INCREF(item);
+        PyList_SET_ITEM((PyObject *)hs, off+2*kw_size+i, item);
       }
     }
 
@@ -584,30 +585,30 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       /* if cache is full, repurpose the last link rather than
        * passing it off to garbage collection.  */
       if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
-	/* Note that the old key will be used to delete the link from the dictionary
-	 * Be sure to INCREF old link so we don't lose it before
-	 * we add it when the PyDict_DelItem occurs */
-	clist *last = co->root->prev;
-	PyObject *old_key = last->key;
-	PyObject *old_res = last->result;
-	// set new items
-	last->key = key;
-	last->result = result;
-	// bump to the front (get back the result we just set).
-	result = make_first(co->root, last);
-	// Increase ref count of repurposed link so we don't trigger GC
-	Py_INCREF(co->root->next);
-	// handle deletions
-	PyDict_DelItem(co->cache_dict,old_key);
-	Py_DECREF(old_key);
-	Py_DECREF(old_res);
+        /* Note that the old key will be used to delete the link from the dictionary
+         * Be sure to INCREF old link so we don't lose it before
+         * we add it when the PyDict_DelItem occurs */
+        clist *last = co->root->prev;
+        PyObject *old_key = last->key;
+        PyObject *old_res = last->result;
+        // set new items
+        last->key = key;
+        last->result = result;
+        // bump to the front (get back the result we just set).
+        result = make_first(co->root, last);
+        // Increase ref count of repurposed link so we don't trigger GC
+        Py_INCREF(co->root->next);
+        // handle deletions
+        PyDict_DelItem(co->cache_dict,old_key);
+        Py_DECREF(old_key);
+        Py_DECREF(old_res);
       }
       else {
-	if(insert_first(co->root, key, result) < 0) {
-	  Py_DECREF(key);
-	  Py_DECREF(result);
-	  return NULL;
-	}
+        if(insert_first(co->root, key, result) < 0) {
+          Py_DECREF(key);
+          Py_DECREF(result);
+          return NULL;
+        }
       }
       PyDict_SetItem(co->cache_dict, key, (PyObject *) co->root->next);
       Py_DECREF(co->root->next);
@@ -660,11 +661,13 @@ cache_info(PyObject *self)
 {
   cacheobject * co = (cacheobject *) self;
   if (co->maxsize >= 0)
-    return PyObject_CallFunction(co->cinfo,"nnnn",co->hits, co->misses, co->maxsize,
-				 ((PyDictObject *)co->cache_dict)->ma_used);
+    return PyObject_CallFunction(co->cinfo,"nnnn",co->hits,
+                                 co->misses, co->maxsize,
+                                 ((PyDictObject *)co->cache_dict)->ma_used);
   else
-    return PyObject_CallFunction(co->cinfo,"nnOn",co->hits, co->misses, Py_None,
-				 ((PyDictObject *)co->cache_dict)->ma_used);
+    return PyObject_CallFunction(co->cinfo,"nnOn",co->hits,
+                                 co->misses, Py_None,
+                                 ((PyDictObject *)co->cache_dict)->ma_used);
 }
 
 
@@ -678,7 +681,7 @@ static PyMethodDef cache_methods[] = {
 
 
 PyDoc_STRVAR(fn_doc,
-	     "Cached function.");
+             "Cached function.");
 
 
 static PyTypeObject cache_type = {
@@ -800,7 +803,8 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
     Py_DECREF(co);
     return NULL;
   }
-  co->cinfo = PyObject_CallFunction(nt,"ss","CacheInfo","hits misses maxsize currsize");
+  co->cinfo = PyObject_CallFunction(nt,"ss","CacheInfo",
+                                    "hits misses maxsize currsize");
   if (co->cinfo == NULL){
     Py_DECREF(co);
     return NULL;
@@ -888,7 +892,7 @@ process_uh(PyObject *arg, PyObject *(*f)(const char *))
   for(j=0; j<3; j++)
     Py_DECREF(uh[j]);
   PyErr_SetString(PyExc_TypeError,
-                  "Argument <unhashable> must be 'error', 'warning', or 'ignore'");
+               "Argument <unhashable> must be 'error', 'warning', or 'ignore'");
   return FC_FAIL;
 }
 
@@ -902,7 +906,7 @@ PyDoc_STRVAR(lrucache__doc__,
 "If *typed* is True, arguments of different types will be cached\n"
 "separately.  For example, f(3.0) and f(3) will be treated as distinct\n"
 "calls with distinct results.\n\n"
-"If *state* is a list or dict, the items will be incorporated into\n"
+"If *state* is a list or dict, the items will be incorporated into the\n"
 "argument hash.\n\n"
 "The result of calling the cached function with unhashable (mutable)\n"
 "arguments depends on the value of *unhashable*:\n\n"
@@ -969,7 +973,7 @@ lrucache(PyObject *self, PyObject *args, PyObject *kwargs)
   // ensure state is a list or dict
   if (state != Py_None && !(PyList_Check(state) || PyDict_CheckExact(state))){
     PyErr_SetString(PyExc_TypeError,
-		    "Argument <state> must be a list or dict.");
+                    "Argument <state> must be a list or dict.");
     return NULL;
   }
 
@@ -1023,7 +1027,7 @@ static PyModuleDef lrucachemodule = {
 #endif
 
 
-#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
+#ifndef PyMODINIT_FUNC  /* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
 #endif
 PyMODINIT_FUNC
