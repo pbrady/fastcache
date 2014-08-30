@@ -123,12 +123,15 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
 
     /* Search for the first index where items are different */
     for (i = 0; i < Py_SIZE(vl) && i < Py_SIZE(wl); i++) {
+      if (vl->ob_item[i] != wl->ob_item[i]){
+        // Only do Python comparisons if pointer comparison fails
         int k = PyObject_RichCompareBool(vl->ob_item[i],
                                          wl->ob_item[i], Py_EQ);
         if (k < 0)
           return NULL;
         if (!k)
           return Py_INCREF(Py_False), Py_False;
+      }
     }
 
     // if we got here all items are equal
