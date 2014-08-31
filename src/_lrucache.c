@@ -133,7 +133,6 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
           return Py_INCREF(Py_False), Py_False;
       }
     }
-
     // if we got here all items are equal
     return Py_INCREF(Py_True), Py_True;
 }
@@ -380,19 +379,28 @@ static void cache_dealloc(cacheobject *co)
 
 /* copied for tuplehash */
 static Py_hash_t
-hashseq_arghash(hashseq *hs, Py_ssize_t len)
+hashseq_arghash(hashseq *hs, Py_ssize_t len, int *ierr)
 {
   PyListObject *v = (PyListObject *)hs;
   Py_uhash_t x;  /* Unsigned for defined overflow behavior. */
   Py_hash_t y;
   PyObject **p;
   Py_uhash_t mult = _PyHASH_MULTIPLIER;
+  *ierr = 0;
   x = 0x345678UL;
   p = v->ob_item;
   while (--len >= 0) {
-    y = PyObject_Hash(*p++);
-    if (y == -1)
+    if (Py_EnterRecursiveCall(" in computing hash")){
+      *ierr = 1;
       return -1;
+    }
+    y = PyObject_Hash(*p++);
+    Py_LeaveRecursiveCall();
+    if (y == -1){
+      if (PyObject_HasAttrString(*(p-1), "__hash__"))
+        *ierr = 1; // Object is hashable but we have an error
+      return -1;
+    }
     x = (x ^ y) * mult;
     /* the cast might truncate len; that doesn't change hash stability */
     mult += (Py_hash_t)(82520UL + len + len);
@@ -416,6 +424,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   hashseq *hs;
   PyListObject *lo;
   int is_list = 1;
+  int ierr;
 
   // determine size of arguments and types
   if (PyList_Check(co->ex_state))
@@ -521,7 +530,9 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
 
   }
 
-  hs->hashvalue = hashseq_arghash(hs, size);
+  hs->hashvalue = hashseq_arghash(hs, size, &ierr);
+  if(ierr)
+    return NULL;
   return (PyObject *)hs;
 }
 
