@@ -62,7 +62,7 @@ Provides 2 Least Recently Used caching function decorators:
   clru_cache - built-in (faster)
              >>> from fastcache import clru_cache, __version__
              >>> __version__
-             '0.4.2'
+             '0.4.3'
              >>> @clru_cache(maxsize=325, typed=False)
              ... def fib(n):
              ...     """Terrible Fibonacci number generator."""
@@ -211,7 +211,7 @@ class BuildExt(_build_ext):
 
 
 setup(name = "fastcache",
-      version = "0.4.2-git",
+      version = "0.4.3",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = long_description,
       author = "Peter Brady",

@@ -1,3 +1,7 @@
+*0.4.3*
+
+- Fixed bug in hash computations which resulted in `stack overflow`.  The appropriate error (RuntimeError) is now returned
+
 *0.4.2*
 
 - The 'state' argument to clru_cache can now be a list or a dict
