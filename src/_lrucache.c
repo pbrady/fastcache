@@ -397,8 +397,8 @@ hashseq_arghash(hashseq *hs, Py_ssize_t len, int *ierr)
     y = PyObject_Hash(*p++);
     Py_LeaveRecursiveCall();
     if (y == -1){
-      if (PyObject_HasAttrString(*(p-1), "__hash__"))
-        *ierr = 1; // Object is hashable but we have an error
+      if (PyErr_GivenExceptionMatches(PyErr_Occurred(), PyExc_RuntimeError))
+        *ierr = 1;
       return -1;
     }
     x = (x ^ y) * mult;
