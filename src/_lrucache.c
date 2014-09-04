@@ -321,7 +321,6 @@ static PyMemberDef cache_memberlist[] = {
   {"__name__",    T_OBJECT, OFF(func_name), RESTRICTED | READONLY},
   {"__qualname__",T_OBJECT, OFF(func_qualname), RESTRICTED | READONLY},
   {"__annotations__", T_OBJECT, OFF(func_annotations), RESTRICTED | READONLY},
-  {"__dict__", T_OBJECT, OFF(func_dict), 0},
   {NULL} /* Sentinel */
 };
 
@@ -340,6 +339,7 @@ cache_get_doc(cacheobject * co, void *closure)
 
 static PyGetSetDef cache_getset[] = {
   {"__doc__", (getter)cache_get_doc, NULL, NULL, NULL},
+  {"__dict__", PyObject_GenericGetDict, PyObject_GenericSetDict},
   {NULL} /* Sentinel */
 };
 
@@ -734,7 +734,7 @@ static PyTypeObject cache_type = {
     0,                                  /* tp_dict */
     cache_descr_get,                    /* tp_descr_get */
     0,                                  /* tp_descr_set */
-    0,                                  /* tp_dictoffset */
+    OFF(func_dict),                     /* tp_dictoffset */
     0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     0,                                  /* tp_new */
