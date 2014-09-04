@@ -341,12 +341,15 @@ cache_get_doc(cacheobject * co, void *closure)
 static int
 restricted(void)
 {
+#ifdef _PY2
     if (!PyEval_GetRestricted())
+#endif
         return 0;
     PyErr_SetString(PyExc_RuntimeError,
         "function attributes not accessible in restricted mode");
     return 1;
 }
+
 
 static PyObject *
 func_get_dict(PyFunctionObject *op)
