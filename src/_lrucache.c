@@ -321,7 +321,6 @@ static PyMemberDef cache_memberlist[] = {
   {"__name__",    T_OBJECT, OFF(func_name), RESTRICTED | READONLY},
   {"__qualname__",T_OBJECT, OFF(func_qualname), RESTRICTED | READONLY},
   {"__annotations__", T_OBJECT, OFF(func_annotations), RESTRICTED | READONLY},
-  {"__dict__", T_OBJECT, OFF(func_dict), 0},
   {NULL} /* Sentinel */
 };
 
@@ -337,11 +336,76 @@ cache_get_doc(cacheobject * co, void *closure)
   return Py_INCREF(fn->func_doc), fn->func_doc;
 }
 
+#if defined(_PY2) || defined (_PY32)
+
+static int
+restricted(void)
+{
+#ifdef _PY2
+    if (!PyEval_GetRestricted())
+#endif
+        return 0;
+    PyErr_SetString(PyExc_RuntimeError,
+        "function attributes not accessible in restricted mode");
+    return 1;
+}
+
+
+static PyObject *
+func_get_dict(PyFunctionObject *op)
+{
+    if (restricted())
+        return NULL;
+    if (op->func_dict == NULL) {
+        op->func_dict = PyDict_New();
+        if (op->func_dict == NULL)
+            return NULL;
+    }
+    Py_INCREF(op->func_dict);
+    return op->func_dict;
+}
+
+static int
+func_set_dict(PyFunctionObject *op, PyObject *value)
+{
+    PyObject *tmp;
+
+    if (restricted())
+        return -1;
+    /* It is illegal to del f.func_dict */
+    if (value == NULL) {
+        PyErr_SetString(PyExc_TypeError,
+                        "function's dictionary may not be deleted");
+        return -1;
+    }
+    /* Can only set func_dict to a dictionary */
+    if (!PyDict_Check(value)) {
+        PyErr_SetString(PyExc_TypeError,
+                        "setting function's dictionary to a non-dict");
+        return -1;
+    }
+    tmp = op->func_dict;
+    Py_INCREF(value);
+    op->func_dict = value;
+    Py_XDECREF(tmp);
+    return 0;
+}
 
 static PyGetSetDef cache_getset[] = {
   {"__doc__", (getter)cache_get_doc, NULL, NULL, NULL},
+  {"__dict__", (getter)func_get_dict, (setter)func_set_dict},
   {NULL} /* Sentinel */
 };
+
+#else
+
+static PyGetSetDef cache_getset[] = {
+  {"__doc__", (getter)cache_get_doc, NULL, NULL, NULL},
+  {"__dict__", PyObject_GenericGetDict, PyObject_GenericSetDict},
+  {NULL} /* Sentinel */
+};
+
+#endif
 
 
 /* Bind a function to an object */
@@ -734,7 +798,7 @@ static PyTypeObject cache_type = {
     0,                                  /* tp_dict */
     cache_descr_get,                    /* tp_descr_get */
     0,                                  /* tp_descr_set */
-    0,                                  /* tp_dictoffset */
+    OFF(func_dict),                     /* tp_dictoffset */
     0,                                  /* tp_init */
     0,                                  /* tp_alloc */
     0,                                  /* tp_new */
