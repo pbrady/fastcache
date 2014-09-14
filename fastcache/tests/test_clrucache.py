@@ -166,3 +166,7 @@ class TestCLru_Cache(unittest.TestCase):
         myAssert(cfunc(1,b=2), cfunc(1.0,b=2))
         myAssert(cfunc(1,b=2), cfunc(1,b=2.0))
 
+    def test_dynamic_attribute(self):
+        cfunc = lru_cache()(self.func)
+        cfunc.new_attr = 5
+        self.assertEqual(cfunc.new_attr, 5)
