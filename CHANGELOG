@@ -1,3 +1,8 @@
+*1.0.0*
+
+- clru_cache now supports dynamic attributes.
+- (c)lru_cache is now threadsafe via custom reentrant locks.
+
 *0.4.3*
 
 - Fixed bug in hash computations which resulted in `stack overflow`.  The appropriate error (RuntimeError) is now returned
