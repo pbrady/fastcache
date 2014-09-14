@@ -32,10 +32,11 @@ class PythonInt:
         return self.value == other.value
 
 from fastcache import clru_cache
+#from functools import lru_cache as clru_cache
 from random import randint
 
-CACHE_SIZE=325
-FIB=CACHE_SIZE-10
+CACHE_SIZE=301
+FIB=CACHE_SIZE-1
 RAND_MIN, RAND_MAX = 1, 10
 
 @clru_cache(maxsize=CACHE_SIZE, typed=False)
@@ -47,7 +48,7 @@ def fib(n):
 # establish correct result from single threaded exectution
 RESULT = fib(PythonInt(FIB))
 
-def run_fib(r):
+def run_fib_with_clear(r):
     """ Run Fibonacci generator r times. """
     for i in range(r):
         if randint(RAND_MIN, RAND_MAX) == RAND_MIN:
@@ -56,15 +57,52 @@ def run_fib(r):
         if RESULT != res:
             raise ValueError("Expected %d, Got %d" % (RESULT, res))
 
+def run_fib_with_stats(r):
+    """ Run Fibonacci generator r times. """
+    for i in range(r):
+        res = fib(PythonInt(FIB))
+        if RESULT != res:
+            raise ValueError("Expected %d, Got %d" % (RESULT, res))
 
-from sys import setswitchinterval
-from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
+try:
+    from sys import setswitchinterval as setinterval
+except ImportError:
+    from sys import setcheckinterval
+    def setinterval(i):
+        return setcheckinterval(int(i))
+
+
+def run_threads(threads):
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
 def run_test(n, r, i):
     """ Run thread safety test with n threads r times using interval i. """
-    setswitchinterval(i)
-    with ThreadPoolExecutor(max_workers=n) as executor:
-        executor.map(run_fib, (r, )*n)
+    setinterval(i)
+    threads = [Thread(target=run_fib_with_clear, args=(r, )) for _ in range(n)]
+    run_threads(threads)
+
+def run_test2(n, r, i):
+    """ Run thread safety test to make sure the cache statistics
+    are correct."""
+    fib.cache_clear()
+    setinterval(i)
+    threads = [Thread(target=run_fib_with_stats, args=(r, )) for _ in range(n)]
+    run_threads(threads)
+
+    hits, misses, maxsize, currsize = fib.cache_info()
+    if misses != CACHE_SIZE:
+        raise ValueError("Expected %d misses, Got %d" %
+                         (CACHE_SIZE, misses))
+    if maxsize != CACHE_SIZE:
+        raise ValueError("Expected %d maxsize, Got %d" %
+                         (CACHE_SIZE, maxsize))
+    if currsize != CACHE_SIZE:
+        raise ValueError("Expected %d currsize, Got %d" %
+                         (CACHE_SIZE, currsize))
 
 import argparse
 
@@ -88,6 +126,7 @@ def main():
                         help='Time in seconds for sys.setswitchinterval.')
 
     run_test(**dict(vars(parser.parse_args())))
+    run_test2(**dict(vars(parser.parse_args())))
 
 
 if __name__ == "__main__":

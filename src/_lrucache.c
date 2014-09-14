@@ -1,5 +1,6 @@
 #include <Python.h>
 #include "structmember.h"
+#include "pythread.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,6 +19,115 @@ typedef unsigned long Py_uhash_t;
 #if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 2
 #define _PY32
 #endif
+
+#ifdef LLTRACE
+#define TBEGIN(x, line) printf("Beginning Trace of %s at lineno %d....", x);
+#define TEND(x) printf("Finished!\n")
+#else
+#define TBEGIN(x, line)
+#define TEND(x)
+#endif
+
+#ifdef WITH_THREAD
+#ifdef _PY2
+typedef int PyLockStatus;
+static PyLockStatus PY_LOCK_FAILURE = 0;
+static PyLockStatus PY_LOCK_ACQUIRED = 1;
+static PyLockStatus PY_LOCK_INTR = -999999;
+#endif
+// global variables for rlock - only modified when holding lock
+static long rlock_owner = 0;
+static unsigned long rlock_count = 0;
+
+static int
+rlock_acquire(PyThread_type_lock lock)
+{
+    long tid;
+    PyLockStatus r;
+
+    tid = PyThread_get_thread_ident();
+    if (rlock_count > 0 && tid == rlock_owner) {
+        unsigned long count = rlock_count + 1;
+        if (count <= rlock_count) {
+            PyErr_SetString(PyExc_OverflowError,
+                            "Internal lock count overflowed");
+            return -1;
+        }
+        rlock_count = count;
+        return 1;
+    }
+    /* do/while loop from acquire_timed */
+    do {
+        /* first a simple non-blocking try without releasing the GIL */
+#ifdef _PY2
+        r = PyThread_acquire_lock(lock, 0);
+#else
+        r = PyThread_acquire_lock_timed(lock, 0, 0);
+#endif
+        if (r == PY_LOCK_FAILURE) {
+            Py_BEGIN_ALLOW_THREADS
+#ifdef _PY2
+            r = PyThread_acquire_lock(lock, 1);
+#else
+            r = PyThread_acquire_lock_timed(lock, -1, 1);
+#endif
+            Py_END_ALLOW_THREADS
+        }
+
+        if (r == PY_LOCK_INTR) {
+            /* Run signal handlers if we were interrupted.  Propagate
+             * exceptions from signal handlers, such as KeyboardInterrupt, by
+             * passing up PY_LOCK_INTR.  */
+            if (Py_MakePendingCalls() < 0) {
+                return -1;
+            }
+        }
+    } while (r == PY_LOCK_INTR);  /* Retry if we were interrupted. */
+    if (r == PY_LOCK_ACQUIRED) {
+        rlock_owner = tid;
+        rlock_count = 1;
+        return 1;
+    }
+    return -1;
+}
+
+static int
+rlock_release(PyThread_type_lock lock)
+{
+    long tid = PyThread_get_thread_ident();
+
+    if (rlock_count == 0 || rlock_owner != tid) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "cannot release un-acquired lock");
+        return -1;
+    }
+
+    if (--rlock_count == 0) {
+        rlock_owner = 0;
+        PyThread_release_lock(lock);
+    }
+    return 1;
+}
+
+
+#define ACQUIRE_LOCK(obj) rlock_acquire((obj)->lock)
+#define RELEASE_LOCK(obj) rlock_release((obj)->lock)
+#define FREE_LOCK(obj) PyThread_free_lock((obj)->lock)
+#else
+#define ACQUIRE_LOCK(obj) 1
+#define RELEASE_LOCK(obj) 1
+#define FREE_LOCK(obj)
+#endif
+
+#define INC_RETURN(op) return Py_INCREF(op), (op)
+
+// THREAD SAFETY NOTES:
+// Python bytecode instructions are atomic but the GIL may switch between
+// threads in between instructions.
+// To make this threadsafe care needs to be taken one such that global objects
+// are left in a consistent between calls to python bytecode.
+// The relevant global objects are co->root, and co->cache_dict
+// The stats are global as well but are modified in one line: stat++
 
 /* hashseq -- internal *****************************************/
 typedef struct {
@@ -106,19 +216,12 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
     PyListObject *vl, *wl;
     Py_ssize_t i;
 
-    // should never happen
-    if (op != Py_EQ){
-      PyErr_SetString(PyExc_TypeError,
-                      "HashSeq object only support == comparison.");
-      return NULL;
-    }
-
     vl = (PyListObject *)v;
     wl = (PyListObject *)w;
 
     if (Py_SIZE(vl) != Py_SIZE(wl)) {
         /* Shortcut: if the lengths differ, the lists differ */
-      return Py_INCREF(Py_False), Py_False;
+      INC_RETURN(Py_False);
     }
 
     /* Search for the first index where items are different */
@@ -130,11 +233,11 @@ hashseq_richcompare(PyObject *v, PyObject *w, int op)
         if (k < 0)
           return NULL;
         if (!k)
-          return Py_INCREF(Py_False), Py_False;
+          INC_RETURN(Py_False);
       }
     }
     // if we got here all items are equal
-    return Py_INCREF(Py_True), Py_True;
+    INC_RETURN(Py_True);
 }
 
 
@@ -203,23 +306,20 @@ clist_dealloc(clist *co)
   clist *prev = co->prev;
   clist *next = co->next;
 
-  Py_XDECREF(co->key);
-  Py_XDECREF(co->result);
-
-  if(prev == co){
-    // remove self referencing node
-    co->prev = NULL;
-    co->next = NULL;
-    Py_TYPE(co)->tp_free(co);
-  }
-  else{
+  // THREAD SAFETY NOTES:
+  // Calls to DECREF can result in bytecode and thread switching.
+  // Do DECREF after the linked list has been modified and is in
+  // an acceptable state.
+  if(prev != co){
     // adjust neighbor pointers
     prev->next = next;
     next->prev = prev;
-    co->prev = NULL;
-    co->next = NULL;
-    Py_TYPE(co)->tp_free(co);
   }
+  co->prev = NULL;
+  co->next = NULL;
+  Py_XDECREF(co->key);
+  Py_XDECREF(co->result);
+  Py_TYPE(co)->tp_free(co);
   return;
 }
 
@@ -251,12 +351,12 @@ static PyTypeObject clist_type = {
 static int
 insert_first(clist *root, PyObject *key, PyObject *result){
   // first element will be inserted at root->next
-  clist *oldfirst = root->next;
   clist *first = PyObject_New(clist, &clist_type);
+  clist *oldfirst = root->next;
+
   if(first == NULL)
     return -1;
-  // INCREF result since it will be used by clist and returned to the caller
-  Py_INCREF(result);
+
   first->result = result;
   // This will be the only reference to key (hashseq), do not INCREF
   first->key = key;
@@ -265,8 +365,8 @@ insert_first(clist *root, PyObject *key, PyObject *result){
   first->next = oldfirst;
   first->prev = root;
   oldfirst->prev = first;
-
-  return 1;
+  // INCREF result since it will be used by clist and returned to the caller
+  return  Py_INCREF(result), 1;
 }
 
 
@@ -275,6 +375,7 @@ make_first(clist *root, clist *node){
   // make node the first node and return new reference to result
   // save previous first position
   clist *oldfirst = root->next;
+
   if (oldfirst != node) {
     // first adjust pointers around node's position
     node->prev->next = node->next;
@@ -285,9 +386,7 @@ make_first(clist *root, clist *node){
     node->prev = root;
     oldfirst->prev = node;
   }
-
-  Py_INCREF(node->result);
-  return node->result;
+  INC_RETURN(node->result);
 }
 
 /**********************************************************
@@ -310,6 +409,10 @@ typedef struct {
   PyObject *cinfo; // named tuple constructor
   Py_ssize_t maxsize, hits, misses;
   clist *root;
+  // lock for cache access
+#ifdef WITH_THREAD
+  PyThread_type_lock lock;
+#endif
 } cacheobject ;
 
 
@@ -333,7 +436,7 @@ cache_get_doc(cacheobject * co, void *closure)
   if (fn->func_doc == NULL)
     Py_RETURN_NONE;
 
-  return Py_INCREF(fn->func_doc), fn->func_doc;
+  INC_RETURN(fn->func_doc);
 }
 
 #if defined(_PY2) || defined (_PY32)
@@ -412,10 +515,9 @@ static PyGetSetDef cache_getset[] = {
 static PyObject *
 cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
 {
-    if (obj == Py_None || obj == NULL) {
-        Py_INCREF(func);
-        return func;
-    }
+    if (obj == Py_None || obj == NULL)
+      INC_RETURN(func);
+
 #ifdef _PY2
     return PyMethod_New(func, obj, type);
 #else
@@ -436,6 +538,7 @@ static void cache_dealloc(cacheobject *co)
   Py_CLEAR(co->ex_state);
   Py_CLEAR(co->cinfo);
   Py_CLEAR(co->root);
+  FREE_LOCK(co);
   Py_TYPE(co)->tp_free(co);
 
 }
@@ -475,7 +578,16 @@ hashseq_arghash(hashseq *hs, Py_ssize_t len, int *ierr)
   return x;
 }
 
+// PyList_SET_ITEM expands to:
+//  (((PyListObject *)(op))->ob_item[i] = (v))
+#define HS_INCSET(op, i, v) (Py_INCREF(v), PyList_SET_ITEM(op, i, v))
 
+
+// compute the hash of function args and kwargs
+// THREAD SAFTEY NOTES:
+// We access global data: co->ex_state and co->typed.
+// These data are defined at co creation time and are not
+// changed so we do not need to worry about thread safety here
 static PyObject *
 make_key(cacheobject *co, PyObject *args, PyObject *kw)
 {
@@ -528,8 +640,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   if(is_list){
     for(i = 0; i < ex_size; i++){
       item = PyList_GET_ITEM(co->ex_state, i);
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, i, item);
+      HS_INCSET(hs, i, item);
     }
   }
   else if(ex_size > 0){
@@ -541,10 +652,8 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     for(i = 0; i < ex_size; i++){
       key = PyList_GET_ITEM(keys, i);
       item = PyDict_GetItem(co->ex_state, key);
-      Py_INCREF(key);
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, 2*i  , key);
-      PyList_SET_ITEM((PyObject *)hs, 2*i+1, item);
+      HS_INCSET(hs, 2*i, key);
+      HS_INCSET(hs, 2*i+1, item);
     }
     Py_DECREF(keys);
   }
@@ -553,16 +662,14 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
     item = PyTuple_GET_ITEM(args, i);
-    Py_INCREF(item);
-    PyList_SET_ITEM((PyObject *)hs, off+i, item);
+    HS_INCSET(hs, off+i, item);
   }
   off += arg_size;
   // incorporate type
   if (co->typed){
     for(i = 0; i < arg_size; i++){
       item = (PyObject *)Py_TYPE(PyTuple_GET_ITEM(args, i));
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, off+i, item);
+      HS_INCSET(hs, off+i, item);
     }
     off += arg_size;
   }
@@ -577,18 +684,15 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     for(i = 0; i < kw_size; i++){
       key = PyList_GET_ITEM(keys, i);
       item = PyDict_GetItem(kw, key);
-      Py_INCREF(key);
-      Py_INCREF(item);
-      PyList_SET_ITEM((PyObject *)hs, off+2*i  , key);
-      PyList_SET_ITEM((PyObject *)hs, off+2*i+1, item);
+      HS_INCSET(hs, off+2*i  , key);
+      HS_INCSET(hs, off+2*i+1, item);
     }
     Py_DECREF(keys);
     // type info
     if (co->typed){
       for(i = 0; i < kw_size; i++){
         item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
-        Py_INCREF(item);
-        PyList_SET_ITEM((PyObject *)hs, off+2*kw_size+i, item);
+        HS_INCSET(hs, off+2*kw_size+i, item);
       }
     }
 
@@ -606,11 +710,16 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
  * Handles: (1) Generation of key (via make_key)
  *          (2) Maintenance of circular doubly linked list
  *          (3) Actual updates to cache dictionary
+ * THREAD SAFETY NOTES:
+ * 1. The GIL may switch threads between all PyDict_Get/Set/DelItem
+ *    If another thread were to call cache_clear while the dict was in
+ *    an indetermined state, that could be very very bad.  Must lock all
+ *    updates to cache_dict
  ***********************************************************/
 static PyObject *
 cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 {
-  PyObject *key, *result, *link;
+  PyObject *key, *result, *link, *first;
 
   /* no cache, just update stats and return */
   if (co->maxsize == 0) {
@@ -618,13 +727,19 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return PyObject_Call(co->fn, args, kw);
   }
 
-  /* generate a key from hashing the arguments */
+  // generate a key from hashing the arguments
+  // THREAD SAFETY NOTES:
+  // Computing the hash will result in many potential calls to __hash__
+  // methods, allowing the GIL to switch threads.  Thus it is possible that
+  // two threads have called this function with the exact same arguments
+  // and are constructing keys
   key = make_key(co, args, kw);
   if (key == NULL)
     return NULL;
 
   /* check for unhashable type, error has already been cleared in make_key */
   if ( ((hashseq *)key)->hashvalue == -1){
+    // no locking neccessary here
     Py_DECREF(key);
     if (co->err == FC_ERROR)
       return NULL;
@@ -645,69 +760,110 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 
   /* For an unbounded cache, link is simply the result of the function call
    * For an LRU cache, link is a pointer to a clist node */
+  if(ACQUIRE_LOCK(co) == -1){
+    Py_DECREF(key);
+    return NULL;
+  }
   link = PyDict_GetItem(co->cache_dict, key);
+  if(RELEASE_LOCK(co) == -1){
+    Py_XDECREF(link);
+    Py_DECREF(key);
+    return NULL;
+  }
 
   if (link == NULL){
-    result = PyObject_Call(co->fn, args, kw);
+    result = PyObject_Call(co->fn, args, kw); // result refcount is one
     if(result == NULL){
       Py_DECREF(key);
       return NULL;
     }
-    /* Unbounded cache, no clist maintenance */
+    /* Unbounded cache, no clist maintenance, no locks needed */
     if (co->maxsize < 0){
       PyDict_SetItem(co->cache_dict, key, result);
       Py_DECREF(key);
-      }
-    /* Least Recently Used cache */
-    else {
-      /* if cache is full, repurpose the last link rather than
-       * passing it off to garbage collection.  */
-      if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
-        /* Note that the old key will be used to delete the link from the dictionary
-         * Be sure to INCREF old link so we don't lose it before
-         * we add it when the PyDict_DelItem occurs */
-        clist *last = co->root->prev;
-        PyObject *old_key = last->key;
-        PyObject *old_res = last->result;
-        // set new items
-        last->key = key;
-        last->result = result;
-        // bump to the front (get back the result we just set).
-        result = make_first(co->root, last);
-        // Increase ref count of repurposed link so we don't trigger GC
-        Py_INCREF(co->root->next);
-        // handle deletions
-        PyDict_DelItem(co->cache_dict,old_key);
-        Py_DECREF(old_key);
-        Py_DECREF(old_res);
-      }
-      else {
-        if(insert_first(co->root, key, result) < 0) {
-          Py_DECREF(key);
-          Py_DECREF(result);
-          return NULL;
-        }
-      }
-      PyDict_SetItem(co->cache_dict, key, (PyObject *) co->root->next);
-      Py_DECREF(co->root->next);
+      return co->misses++, result;
     }
-    co->misses++;
+    /* Least Recently Used cache */
+    /* Need to reacquire the lock here and make sure that the key,result were
+     * not added to the cache while we were waiting */
+    if(ACQUIRE_LOCK(co) == -1){
+      Py_DECREF(key);
+      Py_DECREF(result);
+      return NULL;
+    }
+#ifdef WITH_THREAD
+    link = PyDict_GetItem(co->cache_dict, key);
+    if(link != NULL){
+      Py_DECREF(key);
+      if(RELEASE_LOCK(co) == -1){
+        Py_DECREF(result);
+        return NULL;
+      }
+      return co->hits++, result;
+    }
+#endif
+    /* if cache is full, repurpose the last link rather than
+     * passing it off to garbage collection.  */
+    if (((PyDictObject *)co->cache_dict)->ma_used == co->maxsize){
+      /* Note that the old key will be used to delete the link from the dictionary
+       * Be sure to INCREF old link so we don't lose it before
+       * we add it when the PyDict_DelItem occurs */
+      clist *last = co->root->prev;
+      PyObject *old_key = last->key;
+      PyObject *old_res = last->result;
+      // set new items
+      last->key = key;
+      last->result = result;
+      // bump to the front (get back the result we just set).
+      result = make_first(co->root, last);
+      // Increase ref count of repurposed link so we don't trigger GC
+      // save the first position since the global co->root->next may change
+      first = (PyObject *) co->root->next;
+      PyDict_SetItem(co->cache_dict, key, first); // Increases first->refcount to 2
+      // handle deletions
+      PyDict_DelItem(co->cache_dict, old_key); // Decrease first->refcount to 1
+      // These would have been decrefed had we simply deleted the link
+      Py_DECREF(old_key);
+      Py_DECREF(old_res);
+      co->misses++;
+      if(RELEASE_LOCK(co) == -1){
+        Py_DECREF(result);
+        return NULL;
+      }
+      return result;
+    }
+    else {
+      if(insert_first(co->root, key, result) < 0) {
+        Py_DECREF(key);
+        Py_DECREF(result);
+        RELEASE_LOCK(co);
+        return NULL;
+      }
+      first = (PyObject *) co->root->next; // insert_first sets refcount to 1
 
-    return result;
-
+      PyDict_SetItem(co->cache_dict, key, first);  // key and first count++
+      Py_DECREF(first);
+      // Don't DECREF key here since we want both the dict and the node 'first'
+      // To be able to have a valid copy
+      co->misses++;
+      if(RELEASE_LOCK(co) == -1){
+        Py_DECREF(result);
+        return NULL;
+      }
+      return result;
+    }
   } // link != NULL
   else {
-    Py_DECREF(key);
+    // link refcount is 1 since PyDict_GetItem return borrowed ref
     if( co->maxsize < 0){
-      result = link;
-      Py_INCREF(result);
+      Py_DECREF(key);
+      co->hits++;
+      INC_RETURN(link);
     }
-    else
-      /* bump link to the front of the list and get result from link */
-      result = make_first(co->root, (clist *) link);
-
+    /* bump link to the front of the list and get result from link */
+    result = make_first(co->root, (clist *) link);
+    Py_DECREF(key);
     co->hits++;
-
     return result;
   }
 }
@@ -721,11 +877,14 @@ static PyObject *
 cache_clear(PyObject *self)
 {
   cacheobject *co = (cacheobject *)self;
-  // delete current dictionary
+  // delete dictionary - use a lock to keep dict in a fully determined state
+  if(ACQUIRE_LOCK(co) == -1)
+    return NULL;
   PyDict_Clear(co->cache_dict);
   co->hits = 0;
   co->misses = 0;
-
+  if(RELEASE_LOCK(co) == -1)
+    return NULL;
   Py_RETURN_NONE;
 }
 
@@ -860,8 +1019,16 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
   if (co == NULL)
     return NULL;
 
-  if ((co->cache_dict = PyDict_New()) == NULL)
+#ifdef WITH_THREAD
+  if ((co->lock = PyThread_allocate_lock()) == NULL){
+    Py_DECREF(co);
     return NULL;
+  }
+#endif
+  if ((co->cache_dict = PyDict_New()) == NULL){
+    Py_DECREF(co);
+    return NULL;
+  }
 
   // initialize circular doubly linked list
   co->root = PyObject_New(clist, &clist_type);
