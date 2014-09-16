@@ -354,7 +354,7 @@ insert_first(clist *root, PyObject *key, PyObject *result){
   clist *first = PyObject_New(clist, &clist_type);
   clist *oldfirst = root->next;
 
-  if(first == NULL)
+  if(!first)
     return -1;
 
   first->result = result;
@@ -564,7 +564,8 @@ hashseq_arghash(hashseq *hs, Py_ssize_t len, int *ierr)
     y = PyObject_Hash(*p++);
     Py_LeaveRecursiveCall();
     if (y == -1){
-      if (PyErr_GivenExceptionMatches(PyErr_Occurred(), PyExc_RuntimeError))
+      // If something other than a TypeError was thrown we need to exit
+      if (!PyErr_GivenExceptionMatches(PyErr_Occurred(), PyExc_TypeError))
         *ierr = 1;
       return -1;
     }
@@ -609,14 +610,14 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     is_list = 0;
     ex_size = PyDict_Size(co->ex_state);
   }
-  if (args != NULL && PyTuple_CheckExact(args))
+  if (args && PyTuple_CheckExact(args))
     arg_size = PyTuple_GET_SIZE(args);
-  if (kw != NULL && PyDict_CheckExact(kw))
+  if (kw && PyDict_CheckExact(kw))
     kw_size = PyDict_Size(kw);
 
   // allocate hashseq
   hs = PyObject_GC_New(hashseq, &hashseq_type);
-  if( hs == NULL)
+  if(!hs)
     return NULL;
   // total size
   if (co->typed)
@@ -645,13 +646,21 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   }
   else if(ex_size > 0){
     keys = PyDict_Keys(co->ex_state);
+    if(!keys){
+      Py_DECREF(hs);
+      return NULL;
+    }
     if( PyList_Sort(keys) < 0){
       Py_DECREF(hs);
       return NULL;
     }
     for(i = 0; i < ex_size; i++){
       key = PyList_GET_ITEM(keys, i);
-      item = PyDict_GetItem(co->ex_state, key);
+      if(!(item = PyDict_GetItem(co->ex_state, key))){
+        Py_DECREF(keys);
+        Py_DECREF(hs);
+        return NULL;
+      }
       HS_INCSET(hs, 2*i, key);
       HS_INCSET(hs, 2*i+1, item);
     }
@@ -677,13 +686,21 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   // incorporate keyword arguments
   if(kw_size > 0){
     keys = PyDict_Keys(kw);
+    if(!keys){
+      Py_DECREF(hs);
+      return NULL;
+    }
     if( PyList_Sort(keys) < 0){
       Py_DECREF(hs);
       return NULL;
     }
     for(i = 0; i < kw_size; i++){
       key = PyList_GET_ITEM(keys, i);
-      item = PyDict_GetItem(kw, key);
+      if(!(item = PyDict_GetItem(kw, key))){
+        Py_DECREF(keys);
+        Py_DECREF(hs);
+        return NULL;
+      }
       HS_INCSET(hs, off+2*i  , key);
       HS_INCSET(hs, off+2*i+1, item);
     }
@@ -697,10 +714,16 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
     }
 
   }
-
-  hs->hashvalue = hashseq_arghash(hs, size, &ierr);
-  if(ierr)
+  // check for an error we may have missed
+  if(PyErr_Occurred()){
+    Py_DECREF(hs);
     return NULL;
+  }
+  hs->hashvalue = hashseq_arghash(hs, size, &ierr);
+  if(ierr){
+    Py_DECREF(hs);
+    return NULL;
+  }
   return (PyObject *)hs;
 }
 
@@ -734,14 +757,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   // two threads have called this function with the exact same arguments
   // and are constructing keys
   key = make_key(co, args, kw);
-  if (key == NULL)
+  if (!key)
     return NULL;
 
-  /* check for unhashable type, error has already been cleared in make_key */
+  /* check for unhashable type */
   if ( ((hashseq *)key)->hashvalue == -1){
     // no locking neccessary here
     Py_DECREF(key);
-    if (co->err == FC_ERROR)
+    if (PyErr_CheckSignals() || co->err == FC_ERROR)
       return NULL;
     else
       PyErr_Clear();
@@ -771,15 +794,24 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return NULL;
   }
 
-  if (link == NULL){
+  if (!link){
+    // Check for an exception thrown during PyDict_GetItem
+    if (PyErr_Occurred()){
+      Py_DECREF(key);
+      return NULL;
+    }
     result = PyObject_Call(co->fn, args, kw); // result refcount is one
-    if(result == NULL){
+    if(!result){
       Py_DECREF(key);
       return NULL;
     }
     /* Unbounded cache, no clist maintenance, no locks needed */
     if (co->maxsize < 0){
-      PyDict_SetItem(co->cache_dict, key, result);
+      if( PyDict_SetItem(co->cache_dict, key, result) == -1){
+        Py_DECREF(key);
+        Py_DECREF(result);
+        return NULL;
+      }
       Py_DECREF(key);
       return co->misses++, result;
     }
@@ -793,7 +825,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     }
 #ifdef WITH_THREAD
     link = PyDict_GetItem(co->cache_dict, key);
-    if(link != NULL){
+    if(PyErr_Occurred()){
+      RELEASE_LOCK(co);
+      Py_DECREF(key);
+      Py_DECREF(result);
+      Py_XDECREF(link);
+      return NULL;
+    }
+    if(link){
       Py_DECREF(key);
       if(RELEASE_LOCK(co) == -1){
         Py_DECREF(result);
@@ -819,9 +858,25 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       // Increase ref count of repurposed link so we don't trigger GC
       // save the first position since the global co->root->next may change
       first = (PyObject *) co->root->next;
-      PyDict_SetItem(co->cache_dict, key, first); // Increases first->refcount to 2
+      // Increases first->refcount to 2
+      if(PyDict_SetItem(co->cache_dict, key, first) == -1){
+        Py_DECREF(first);
+        Py_DECREF(first);
+        Py_DECREF(key);
+        Py_DECREF(old_key);
+        Py_DECREF(old_res);
+        Py_DECREF(result);
+        RELEASE_LOCK(co);
+        return NULL;
+      }
       // handle deletions
-      PyDict_DelItem(co->cache_dict, old_key); // Decrease first->refcount to 1
+      if(PyDict_DelItem(co->cache_dict, old_key) == -1){
+        Py_DECREF(old_key);
+        Py_DECREF(old_res);
+        Py_DECREF(result);
+        RELEASE_LOCK(co);
+        return NULL;
+      }
       // These would have been decrefed had we simply deleted the link
       Py_DECREF(old_key);
       Py_DECREF(old_res);
@@ -841,7 +896,12 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       }
       first = (PyObject *) co->root->next; // insert_first sets refcount to 1
 
-      PyDict_SetItem(co->cache_dict, key, first);  // key and first count++
+      if(PyDict_SetItem(co->cache_dict, key, first) == -1){  // key and first count++
+        Py_DECREF(first);
+        Py_DECREF(result);
+        RELEASE_LOCK(co);
+        return NULL;
+      }
       Py_DECREF(first);
       // Don't DECREF key here since we want both the dict and the node 'first'
       // To be able to have a valid copy
@@ -854,7 +914,10 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     }
   } // link != NULL
   else {
-    // link refcount is 1 since PyDict_GetItem return borrowed ref
+    if(PyErr_Occurred()){
+      Py_DECREF(key);
+      return NULL;
+    }
     if( co->maxsize < 0){
       Py_DECREF(key);
       co->hits++;
