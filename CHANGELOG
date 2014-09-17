@@ -1,3 +1,6 @@
+*1.0.1*
+- better error checking so fastcache now plays well with signals.  There is a performance hit for this.  Next Release should handle this better.
+
 *1.0.0*
 
 - clru_cache now supports dynamic attributes.
