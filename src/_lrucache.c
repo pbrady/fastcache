@@ -788,6 +788,12 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return NULL;
   }
   link = PyDict_GetItem(co->cache_dict, key);
+  if(PyErr_Occurred()){
+    RELEASE_LOCK(co);
+    Py_XDECREF(link);
+    Py_DECREF(key);
+    return NULL;
+  }
   if(RELEASE_LOCK(co) == -1){
     Py_XDECREF(link);
     Py_DECREF(key);
@@ -795,19 +801,16 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   }
 
   if (!link){
-    // Check for an exception thrown during PyDict_GetItem
-    if (PyErr_Occurred()){
-      Py_DECREF(key);
-      return NULL;
-    }
     result = PyObject_Call(co->fn, args, kw); // result refcount is one
-    if(!result){
+    if(PyErr_Occurred() || !result){
+      Py_XDECREF(result);
       Py_DECREF(key);
       return NULL;
     }
     /* Unbounded cache, no clist maintenance, no locks needed */
     if (co->maxsize < 0){
-      if( PyDict_SetItem(co->cache_dict, key, result) == -1){
+      if( PyDict_SetItem(co->cache_dict, key, result) == -1 ||
+          PyErr_Occurred()){
         Py_DECREF(key);
         Py_DECREF(result);
         return NULL;
@@ -880,12 +883,16 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       // These would have been decrefed had we simply deleted the link
       Py_DECREF(old_key);
       Py_DECREF(old_res);
-      co->misses++;
+      if(PyErr_Occurred()){
+        Py_DECREF(result);
+        RELEASE_LOCK(co);
+        return NULL;
+      }
       if(RELEASE_LOCK(co) == -1){
         Py_DECREF(result);
         return NULL;
       }
-      return result;
+      return co->misses++, result;
     }
     else {
       if(insert_first(co->root, key, result) < 0) {
@@ -895,8 +902,8 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
         return NULL;
       }
       first = (PyObject *) co->root->next; // insert_first sets refcount to 1
-
-      if(PyDict_SetItem(co->cache_dict, key, first) == -1){  // key and first count++
+      // key and first count++
+      if(PyDict_SetItem(co->cache_dict, key, first) == -1 || PyErr_Occurred()){
         Py_DECREF(first);
         Py_DECREF(result);
         RELEASE_LOCK(co);
@@ -914,10 +921,6 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     }
   } // link != NULL
   else {
-    if(PyErr_Occurred()){
-      Py_DECREF(key);
-      return NULL;
-    }
     if( co->maxsize < 0){
       Py_DECREF(key);
       co->hits++;
