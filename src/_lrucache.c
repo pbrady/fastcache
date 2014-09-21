@@ -1,6 +1,7 @@
 #include <Python.h>
 #include "structmember.h"
 #include "pythread.h"
+#include <sys/time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,33 @@ typedef unsigned long Py_uhash_t;
 #define TBEGIN(x, line)
 #define TEND(x)
 #endif
+
+// Some debugging for assessing signals
+static int alarm_set_last;
+static int alarm_set_now;
+/* Return -1 on error
+ * Return  1 if alarm is still set
+ * Return  0 if alarm is not set
+ */
+static int
+itimer_isset(void)
+{
+  struct itimerval old;
+
+  if (getitimer(ITIMER_REAL, &old) != 0){
+    PyErr_SetString(PyExc_RuntimeError,
+                    "getitimer failed.");
+    return -1;
+  }
+
+  if (old.it_value.tv_sec > 0 || old.it_value.tv_usec > 0)
+    return 1;
+
+  return 0;
+}
+
+#define ALARM_SET_NOW  if ((alarm_set_now = itimer_isset()) == -1) \
+                           return NULL
 
 #ifdef WITH_THREAD
 #ifdef _PY2
@@ -750,6 +778,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return PyObject_Call(co->fn, args, kw);
   }
 
+  ALARM_SET_NOW;
+  if (!alarm_set_now){
+    PyErr_SetString(PyExc_KeyboardInterrupt,
+                    "Alarm not set at start of cache call.");
+    return NULL;
+  }
+  alarm_set_last = alarm_set_now;
+
   // generate a key from hashing the arguments
   // THREAD SAFETY NOTES:
   // Computing the hash will result in many potential calls to __hash__
@@ -759,6 +795,8 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   key = make_key(co, args, kw);
   if (!key)
     return NULL;
+
+  ALARM_SET_NOW;
 
   /* check for unhashable type */
   if ( ((hashseq *)key)->hashvalue == -1){
