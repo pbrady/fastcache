@@ -32,6 +32,7 @@ typedef unsigned long Py_uhash_t;
 // Some debugging for assessing signals
 static int alarm_set_last;
 static int alarm_set_now;
+static int alarm_init = 0;
 /* Return -1 on error
  * Return  1 if alarm is still set
  * Return  0 if alarm is not set
@@ -779,11 +780,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
   }
 
   ALARM_SET_NOW;
-  if (!alarm_set_now){
+  if (!alarm_set_now && alarm_init){
     PyErr_SetString(PyExc_KeyboardInterrupt,
                     "Alarm not set at start of cache call.");
     return NULL;
   }
+  if (!alarm_init && alarm_set_now)
+    alarm_init = 1;
+
   alarm_set_last = alarm_set_now;
 
   // generate a key from hashing the arguments
@@ -840,15 +844,14 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
 
   if (!link){
     result = PyObject_Call(co->fn, args, kw); // result refcount is one
-    if(PyErr_Occurred() || !result){
+    if(!result){
       Py_XDECREF(result);
       Py_DECREF(key);
       return NULL;
     }
     /* Unbounded cache, no clist maintenance, no locks needed */
     if (co->maxsize < 0){
-      if( PyDict_SetItem(co->cache_dict, key, result) == -1 ||
-          PyErr_Occurred()){
+      if( PyDict_SetItem(co->cache_dict, key, result) == -1){
         Py_DECREF(key);
         Py_DECREF(result);
         return NULL;
@@ -921,11 +924,6 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       // These would have been decrefed had we simply deleted the link
       Py_DECREF(old_key);
       Py_DECREF(old_res);
-      if(PyErr_Occurred()){
-        Py_DECREF(result);
-        RELEASE_LOCK(co);
-        return NULL;
-      }
       if(RELEASE_LOCK(co) == -1){
         Py_DECREF(result);
         return NULL;
@@ -941,7 +939,7 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
       }
       first = (PyObject *) co->root->next; // insert_first sets refcount to 1
       // key and first count++
-      if(PyDict_SetItem(co->cache_dict, key, first) == -1 || PyErr_Occurred()){
+      if(PyDict_SetItem(co->cache_dict, key, first) == -1){
         Py_DECREF(first);
         Py_DECREF(result);
         RELEASE_LOCK(co);
