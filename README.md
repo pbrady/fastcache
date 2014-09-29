@@ -46,7 +46,10 @@ conda install --use-local fastcache
 Test
 ----
 
-`py.test --pyargs fastcache`
+```python
+>>> import fastcache
+>>> fastcache.test()
+```
 
 Travis CI status :  [![alt text][2]][1]
 
