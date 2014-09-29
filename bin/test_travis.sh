@@ -5,6 +5,10 @@ set -e
 # Echo each command
 set -x
 
-mkdir empty
+mkdir -p empty
 cd empty
-py.test --pyargs fastcache
+cat << EOF | python
+import fastcache
+if not fastcache.test():
+    raise Exception('Tests failed')
+EOF
