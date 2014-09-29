@@ -21,7 +21,7 @@ lru_cache  - python wrapper around clru_cache (slower)
            >>> <class 'function'>
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.1-git"
 
 
 from ._lrucache import clru_cache
@@ -73,3 +73,8 @@ def lru_cache(maxsize=128, typed=False, state=None, unhashable='error'):
         return update_wrapper(wrapper,func)
 
     return func_wrapper
+
+def test():
+    import pytest, os
+    return not pytest.cmdline.main(
+        [os.path.dirname(os.path.abspath(__file__))])
