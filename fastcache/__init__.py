@@ -74,7 +74,7 @@ def lru_cache(maxsize=128, typed=False, state=None, unhashable='error'):
 
     return func_wrapper
 
-def test():
+def test(*args):
     import pytest, os
-    return not pytest.cmdline.main(
-        [os.path.dirname(os.path.abspath(__file__))])
+    return not pytest.main([os.path.dirname(os.path.abspath(__file__))] +
+                           list(args))
