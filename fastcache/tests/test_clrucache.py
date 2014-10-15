@@ -1,6 +1,7 @@
 import pytest
 import fastcache
 import itertools
+import warnings
 
 try:
     itertools.count(start=0, step=-1)
@@ -96,12 +97,14 @@ def test_warn_unhashable_args(cache, recwarn):
     def f(a, b):
         return (a, ) + (b, )
 
-    assert f([1], 2) == f.__wrapped__([1], 2)
-    w = recwarn.pop(UserWarning)
-    assert issubclass(w.category, UserWarning)
-    assert "Unhashable arguments cannot be cached" in str(w.message)
-    assert w.filename
-    assert w.lineno
+    with warnings.catch_warnings() :
+        warnings.simplefilter("always")
+        assert f([1], 2) == f.__wrapped__([1], 2)
+        w = recwarn.pop(UserWarning)
+        assert issubclass(w.category, UserWarning)
+        assert "Unhashable arguments cannot be cached" in str(w.message)
+        assert w.filename
+        assert w.lineno
 
 
 def test_ignore_unhashable_args(cache):
