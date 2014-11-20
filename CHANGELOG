@@ -1,3 +1,7 @@
+*1.0.2*
+- use pytest for testing
+- Bug fix for windows compatibility
+
 *1.0.1*
 - better error checking so fastcache now plays well with signals.  There is a performance hit for this.  Next Release should handle this better.
 
