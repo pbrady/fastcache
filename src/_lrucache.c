@@ -636,7 +636,7 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
 
   Py_SIZE(lo) = size;
   lo->allocated = size;
-  _PyObject_GC_TRACK(hs);
+  PyObject_GC_Track(hs);
   // incorporate extra state
   if(is_list){
     for(i = 0; i < ex_size; i++){
