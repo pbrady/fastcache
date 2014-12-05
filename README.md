@@ -1,5 +1,6 @@
 fastcache
 =========
+[![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/pbrady/fastcache?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 C implementation of Python 3 lru_cache for Python 2.6, 2.7, 3.2, 3.3, 3.4
 
