@@ -21,7 +21,7 @@ lru_cache  - python wrapper around clru_cache (slower)
            >>> <class 'function'>
 """
 
-__version__ = "1.0.2"
+__version__ = "1.0.2+git0"
 
 
 from ._lrucache import clru_cache

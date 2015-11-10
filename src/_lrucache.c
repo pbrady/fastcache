@@ -9,11 +9,6 @@ extern "C" {
 #if PY_MAJOR_VERSION == 2
 #define _PY2
 typedef long Py_hash_t;
-typedef unsigned long Py_uhash_t;
-#endif
-
-#ifndef _PyHASH_MULTIPLIER
-#define _PyHASH_MULTIPLIER 1000003UL
 #endif
 
 #if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION == 2
@@ -129,124 +124,48 @@ rlock_release(PyThread_type_lock lock)
 // The relevant global objects are co->root, and co->cache_dict
 // The stats are global as well but are modified in one line: stat++
 
-/* hashseq -- internal *****************************************/
+/* HashedArgs -- internal *****************************************/
 typedef struct {
-  PyListObject list;
+  PyObject_HEAD
+  PyObject *args;
   Py_hash_t hashvalue;
-} hashseq;
-
-
-/* hashseq_{traverse, clear, dealloc} are copied from PyListObject */
-static int
-hashseq_traverse(hashseq *self, visitproc visit, void *arg)
-{
-  Py_ssize_t i;
-
-  for (i = Py_SIZE(self); --i >= 0; )
-    Py_VISIT(((PyListObject *)self)->ob_item[i]);
-  return 0;
-
-}
-
-
-static int
-hashseq_clear(hashseq *self)
-{
-    Py_ssize_t i;
-    PyListObject *a = (PyListObject *)self;
-    PyObject **item = a->ob_item;
-    if (item != NULL) {
-        /* Because XDECREF can recursively invoke operations on
-           this list, we make it empty first. */
-        i = Py_SIZE(a);
-        Py_SIZE(a) = 0;
-        a->ob_item = NULL;
-        a->allocated = 0;
-        while (--i >= 0) {
-            Py_XDECREF(item[i]);
-        }
-        PyMem_FREE(item);
-    }
-    /* Never fails; the return value can be ignored.
-       Note that there is no guarantee that the list is actually empty
-       at this point, because XDECREF may have populated it again! */
-    return 0;
-}
+} HashedArgs;
 
 
 static void
-hashseq_dealloc(hashseq *self)
+HashedArgs_dealloc(HashedArgs *self)
 {
-  PyListObject *lo;
-  Py_ssize_t i;
-
-  lo = (PyListObject *)self;
-
-  PyObject_GC_UnTrack(self);
-  Py_TRASHCAN_SAFE_BEGIN(self);
-
-  if (lo->ob_item != NULL){
-    i = Py_SIZE(lo);
-    while(--i >=0) {
-      Py_XDECREF(lo->ob_item[i]);
-    }
-    PyMem_FREE(lo->ob_item);
-  }
-  Py_TYPE(self)->tp_free((PyObject *)self);
-
-  Py_TRASHCAN_SAFE_END(self)
+  Py_XDECREF(self->args);
+  Py_TYPE(self)->tp_free(self);
+  return;
 }
 
 
 /* return precomputed tuple hash for speed */
 static Py_hash_t
-HS_hash(hashseq *self)
+HashedArgs_hash(HashedArgs *self)
 {
   return self->hashvalue;
 }
 
 
-/* copied from PyListObject
- * hashseq's are internal objects which are only compared with
- * other hashseq's when the hashes are the same.
- * Furthermore, lookdict only calls this routine with op==Py_EQ */
+/* Delegate comparison to tuples */
 static PyObject *
-hashseq_richcompare(PyObject *v, PyObject *w, int op)
+HashedArgs_richcompare(PyObject *v, PyObject *w, int op)
 {
-    PyListObject *vl, *wl;
-    Py_ssize_t i;
-
-    vl = (PyListObject *)v;
-    wl = (PyListObject *)w;
-
-    if (Py_SIZE(vl) != Py_SIZE(wl)) {
-        /* Shortcut: if the lengths differ, the lists differ */
-      INC_RETURN(Py_False);
-    }
-
-    /* Search for the first index where items are different */
-    for (i = 0; i < Py_SIZE(vl) && i < Py_SIZE(wl); i++) {
-      if (vl->ob_item[i] != wl->ob_item[i]){
-        // Only do Python comparisons if pointer comparison fails
-        int k = PyObject_RichCompareBool(vl->ob_item[i],
-                                         wl->ob_item[i], Py_EQ);
-        if (k < 0)
-          return NULL;
-        if (!k)
-          INC_RETURN(Py_False);
-      }
-    }
-    // if we got here all items are equal
-    INC_RETURN(Py_True);
+  HashedArgs *hv = (HashedArgs *) v;
+  HashedArgs *hw = (HashedArgs *) w;
+  PyObject *res = PyObject_RichCompare(hv->args, hw->args, op);
+  return res;
 }
 
 
-static PyTypeObject hashseq_type = {
+static PyTypeObject HashedArgs_type = {
   PyVarObject_HEAD_INIT(NULL, 0)
-  "_lrucache.hashseq",          /* tp_name */
-  sizeof(hashseq),              /* tp_basicsize */
+  "_lrucache.HashedArgs",          /* tp_name */
+  sizeof(HashedArgs),              /* tp_basicsize */
   0,                            /* tp_itemsize */
-  (destructor)hashseq_dealloc,  /* tp_dealloc */
+  (destructor)HashedArgs_dealloc,  /* tp_dealloc */
   0,                            /* tp_print */
   0,                            /* tp_getattr */
   0,                            /* tp_setattr */
@@ -255,37 +174,21 @@ static PyTypeObject hashseq_type = {
   0,                            /* tp_as_number */
   0,                            /* tp_as_sequence */
   0,                            /* tp_as_mapping */
-  (hashfunc)HS_hash,            /* tp_hash */
+  (hashfunc)HashedArgs_hash,    /* tp_hash */
   0,                            /* tp_call */
   0,                            /* tp_str */
   0,                            /* tp_getattro */
   0,                            /* tp_setattro */
   0,                            /* tp_as_buffer */
-  Py_TPFLAGS_DEFAULT |
-  Py_TPFLAGS_HAVE_GC,             /* tp_flags */
+  Py_TPFLAGS_DEFAULT,             /* tp_flags */
   0,                              /* tp_doc */
-  (traverseproc)hashseq_traverse, /* tp_traverse */
-  (inquiry)hashseq_clear,         /* tp_clear */
-  hashseq_richcompare,     /* tp_richcompare */
-  0,                       /* tp_weaklistoffset */
-  0,                       /* tp_iter */
-  0,                       /* tp_iternext */
-  0,                       /* tp_methods */
-  0,                       /* tp_members */
-  0,                       /* tp_getset */
-  0,                       /* tp_base */
-  0,                       /* tp_dict */
-  0,                       /* tp_descr_get */
-  0,                       /* tp_descr_set */
-  0,                       /* tp_dictoffset */
-  0,                       /* tp_init */
-  0,                       /* tp_alloc */
-  0,                       /* tp_new */
-  PyObject_GC_Del,         /* tp_free */
+  0,                        /* tp_traverse */
+  0,                       /* tp_clear */
+  HashedArgs_richcompare,     /* tp_richcompare */
 };
 
 /***************************************************
- End of _hashedseq
+ End of HashedArgs
 ***************************************************/
 
 /***********************************************************
@@ -358,7 +261,7 @@ insert_first(clist *root, PyObject *key, PyObject *result){
     return -1;
 
   first->result = result;
-  // This will be the only reference to key (hashseq), do not INCREF
+  // This will be the only reference to key (HashedArgs), do not INCREF
   first->key = key;
 
   root->next = first;
@@ -526,7 +429,8 @@ cache_descr_get(PyObject *func, PyObject *obj, PyObject *type)
 }
 
 
-static void cache_dealloc(cacheobject *co)
+static void
+cache_dealloc(cacheobject *co)
 {
   Py_CLEAR(co->fn);
   Py_CLEAR(co->func_module);
@@ -544,45 +448,39 @@ static void cache_dealloc(cacheobject *co)
 }
 
 
-/* copied for tuplehash */
-static Py_hash_t
-hashseq_arghash(hashseq *hs, Py_ssize_t len, int *ierr)
+/*
+ * attempt to set hs->hashvalue to hash(hs->args)  Does not do alter any
+ * reference counts.  Returns NULL on error.  If hs->hashvalue==-1 on return
+ * then hs->args is Unhashable
+ */
+static PyObject *
+set_hash_value(cacheobject *co, HashedArgs *hs)
 {
-  PyListObject *v = (PyListObject *)hs;
-  Py_uhash_t x;  /* Unsigned for defined overflow behavior. */
-  Py_hash_t y;
-  PyObject **p;
-  Py_uhash_t mult = _PyHASH_MULTIPLIER;
-  *ierr = 0;
-  x = 0x345678UL;
-  p = v->ob_item;
-  while (--len >= 0) {
-    if (Py_EnterRecursiveCall(" in computing hash")){
-      *ierr = 1;
-      return -1;
+  if ((hs->hashvalue = PyObject_Hash(hs->args)) == -1) {
+    // unhashable
+    if (co->err == FC_ERROR) {
+      return NULL;
     }
-    y = PyObject_Hash(*p++);
-    Py_LeaveRecursiveCall();
-    if (y == -1){
-      // If something other than a TypeError was thrown we need to exit
-      if (!PyErr_GivenExceptionMatches(PyErr_Occurred(), PyExc_TypeError))
-        *ierr = 1;
-      return -1;
+    // if error was something other than a TypeError, exit
+    if (!PyErr_GivenExceptionMatches(PyErr_Occurred(), PyExc_TypeError)) {
+      return NULL;
     }
-    x = (x ^ y) * mult;
-    /* the cast might truncate len; that doesn't change hash stability */
-    mult += (Py_hash_t)(82520UL + len + len);
+    PyErr_Clear();
+
+    if (co->err == FC_WARNING) {
+      // try to issue warning
+      if( PyErr_WarnEx(PyExc_UserWarning,
+          "Unhashable arguments cannot be cached",1) < 0){
+        // warning becomes exception
+        PyErr_SetString(PyExc_TypeError,
+                        "Cached function arguments must be hashable");
+        return NULL;
+      }
+    }
   }
-  x += 97531UL;
-  if (x == (Py_uhash_t)-1)
-    x = -2;
-  return x;
+  // success!
+  return (PyObject *) hs;
 }
-
-// PyList_SET_ITEM expands to:
-//  (((PyListObject *)(op))->ob_item[i] = (v))
-#define HS_INCSET(op, i, v) (Py_INCREF(v), PyList_SET_ITEM(op, i, v))
-
 
 // compute the hash of function args and kwargs
 // THREAD SAFTEY NOTES:
@@ -597,11 +495,8 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   Py_ssize_t arg_size = 0;
   Py_ssize_t kw_size = 0;
   Py_ssize_t i, size, off;
-  size_t nbytes;
-  hashseq *hs;
-  PyListObject *lo;
+  HashedArgs *hs;
   int is_list = 1;
-  int ierr;
 
   // determine size of arguments and types
   if (PyList_Check(co->ex_state))
@@ -615,54 +510,49 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
   if (kw && PyDict_CheckExact(kw))
     kw_size = PyDict_Size(kw);
 
-  // allocate hashseq
-  hs = PyObject_GC_New(hashseq, &hashseq_type);
-  if(!hs)
+  // allocate HashedArgs Object
+  if(!(hs = PyObject_New(HashedArgs, &HashedArgs_type)))
     return NULL;
+
   // total size
   if (co->typed)
     size = (2-is_list)*ex_size+2*arg_size+3*kw_size;
   else
     size = (2-is_list)*ex_size+arg_size+2*kw_size;
-  // cast hashseq to list and initialize
-  lo = (PyListObject *) hs;
-  nbytes = size * sizeof(PyObject *);
-  lo->ob_item = (PyObject **) PyMem_MALLOC(nbytes);
-  if(lo->ob_item == NULL){
-    Py_DECREF(hs);
-    return PyErr_NoMemory();
+  // initialize new tuple
+  if(!(hs->args = PyTuple_New(size))){
+    return NULL;
   }
-  memset(lo->ob_item, 0, nbytes);
-
-  Py_SIZE(lo) = size;
-  lo->allocated = size;
-  PyObject_GC_Track(hs);
   // incorporate extra state
   if(is_list){
     for(i = 0; i < ex_size; i++){
-      item = PyList_GET_ITEM(co->ex_state, i);
-      HS_INCSET(hs, i, item);
+      PyObject *tmp = PyList_GET_ITEM(co->ex_state, i);
+      PyTuple_SET_ITEM(hs->args, i, tmp);
+      Py_INCREF(tmp);
     }
   }
   else if(ex_size > 0){
-    keys = PyDict_Keys(co->ex_state);
-    if(!keys){
+    if(!(keys = PyDict_Keys(co->ex_state))){
       Py_DECREF(hs);
       return NULL;
     }
     if( PyList_Sort(keys) < 0){
+      Py_DECREF(keys);
       Py_DECREF(hs);
       return NULL;
     }
     for(i = 0; i < ex_size; i++){
       key = PyList_GET_ITEM(keys, i);
+      Py_INCREF(key);
+      PyTuple_SET_ITEM(hs->args, 2*i, key);
+
       if(!(item = PyDict_GetItem(co->ex_state, key))){
         Py_DECREF(keys);
         Py_DECREF(hs);
         return NULL;
       }
-      HS_INCSET(hs, 2*i, key);
-      HS_INCSET(hs, 2*i+1, item);
+      Py_INCREF(item);
+      PyTuple_SET_ITEM(hs->args, 2*i+1, item);
     }
     Py_DECREF(keys);
   }
@@ -670,60 +560,61 @@ make_key(cacheobject *co, PyObject *args, PyObject *kw)
 
   // incorporate arguments
   for(i = 0; i < arg_size; i++){
-    item = PyTuple_GET_ITEM(args, i);
-    HS_INCSET(hs, off+i, item);
+    PyObject *tmp = PyTuple_GET_ITEM(args, i);
+    PyTuple_SET_ITEM(hs->args, off+i, tmp);
+    Py_INCREF(tmp);
+    if(co->typed) {
+      off += 1;
+      tmp = (PyObject *)Py_TYPE(tmp);
+      Py_INCREF(tmp);
+      PyTuple_SET_ITEM(hs->args, off+i, tmp);
+    }
   }
   off += arg_size;
-  // incorporate type
-  if (co->typed){
-    for(i = 0; i < arg_size; i++){
-      item = (PyObject *)Py_TYPE(PyTuple_GET_ITEM(args, i));
-      HS_INCSET(hs, off+i, item);
-    }
-    off += arg_size;
-  }
 
   // incorporate keyword arguments
   if(kw_size > 0){
-    keys = PyDict_Keys(kw);
-    if(!keys){
+    if(!(keys = PyDict_Keys(kw))){
       Py_DECREF(hs);
       return NULL;
     }
     if( PyList_Sort(keys) < 0){
+      Py_DECREF(keys);
       Py_DECREF(hs);
       return NULL;
     }
     for(i = 0; i < kw_size; i++){
       key = PyList_GET_ITEM(keys, i);
+      Py_INCREF(key);
+      PyTuple_SET_ITEM(hs->args, off+i, key);
       if(!(item = PyDict_GetItem(kw, key))){
         Py_DECREF(keys);
         Py_DECREF(hs);
         return NULL;
       }
-      HS_INCSET(hs, off+2*i  , key);
-      HS_INCSET(hs, off+2*i+1, item);
-    }
-    Py_DECREF(keys);
-    // type info
-    if (co->typed){
-      for(i = 0; i < kw_size; i++){
-        item = (PyObject *)Py_TYPE(PyList_GET_ITEM((PyObject *)hs, off+2*i+1));
-        HS_INCSET(hs, off+2*kw_size+i, item);
+      off += 1;
+      Py_INCREF(item);
+      PyTuple_SET_ITEM(hs->args, off+i, item);
+      if (co->typed){
+          off += 1;
+          item = (PyObject *)Py_TYPE(item);
+          Py_INCREF(item);
+          PyTuple_SET_ITEM(hs->args, off+i, item);
       }
     }
-
+    Py_DECREF(keys);
   }
   // check for an error we may have missed
-  if(PyErr_Occurred()){
+  if( PyErr_Occurred() ){
     Py_DECREF(hs);
     return NULL;
   }
-  hs->hashvalue = hashseq_arghash(hs, size, &ierr);
-  if(ierr){
+  // set hash value
+  if( !set_hash_value(co, hs) ) {
     Py_DECREF(hs);
     return NULL;
   }
+
   return (PyObject *)hs;
 }
 
@@ -761,22 +652,9 @@ cache_call(cacheobject *co, PyObject *args, PyObject *kw)
     return NULL;
 
   /* check for unhashable type */
-  if ( ((hashseq *)key)->hashvalue == -1){
+  if ( ((HashedArgs *)key)->hashvalue == -1){
     // no locking neccessary here
     Py_DECREF(key);
-    if (PyErr_CheckSignals() || co->err == FC_ERROR)
-      return NULL;
-    else
-      PyErr_Clear();
-    if (co->err == FC_WARNING)
-      // try to issue warning
-      if( PyErr_WarnEx(PyExc_UserWarning,
-                       "Unhashable arguments cannot be cached",1) < 0){
-        // warning becomes exception
-        PyErr_SetString(PyExc_TypeError,
-                        "Cached function arguments must be hashable");
-        return NULL;
-      }
     co->misses++;
     return PyObject_Call(co->fn, args, kw);
   }
@@ -1361,8 +1239,8 @@ PyInit__lrucache(void)
   if (PyType_Ready(&cache_type) < 0)
     _PYINIT_ERROR_RET;
 
-  hashseq_type.tp_base = &PyList_Type;
-  if (PyType_Ready(&hashseq_type) < 0)
+  HashedArgs_type.tp_new = PyType_GenericNew;
+  if (PyType_Ready(&HashedArgs_type) < 0)
     _PYINIT_ERROR_RET;
 
   clist_type.tp_new = PyType_GenericNew;
@@ -1380,7 +1258,7 @@ PyInit__lrucache(void)
 
   Py_INCREF(&lru_type);
   Py_INCREF(&cache_type);
-  Py_INCREF(&hashseq_type);
+  Py_INCREF(&HashedArgs_type);
   Py_INCREF(&clist_type);
 
 #ifndef _PY2
