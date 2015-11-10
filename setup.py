@@ -211,7 +211,7 @@ class BuildExt(_build_ext):
 
 
 setup(name = "fastcache",
-      version = "1.0.2",
+      version = "1.0.2+git0",
       description = "C implementation of Python 3 functools.lru_cache",
       long_description = long_description,
       author = "Peter Brady",
