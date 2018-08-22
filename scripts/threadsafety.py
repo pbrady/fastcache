@@ -43,7 +43,15 @@ RAND_MIN, RAND_MAX = 1, 10
 def fib(n):
     """Terrible Fibonacci number generator."""
     v = n.value
-    return v if v < 2 else fib(PythonInt(v-1)) + fib(PythonInt(v-2))
+    return v if v < 2 else fib2(PythonInt(v-1)) + fib(PythonInt(v-2))
+
+@clru_cache(maxsize=CACHE_SIZE, typed=False)
+def fib2(n):
+    """Terrible Fibonacci number generator."""
+    v = n.value
+    return v if v < 2 else fib(PythonInt(v-1)) + fib2(PythonInt(v-2))
+
+
 
 # establish correct result from single threaded exectution
 RESULT = fib(PythonInt(FIB))
@@ -53,6 +61,7 @@ def run_fib_with_clear(r):
     for i in range(r):
         if randint(RAND_MIN, RAND_MAX) == RAND_MIN:
             fib.cache_clear()
+            fib2.cache_clear()
         res = fib(PythonInt(FIB))
         if RESULT != res:
             raise ValueError("Expected %d, Got %d" % (RESULT, res))
@@ -94,15 +103,15 @@ def run_test2(n, r, i):
     run_threads(threads)
 
     hits, misses, maxsize, currsize = fib.cache_info()
-    if misses != CACHE_SIZE:
+    if misses != CACHE_SIZE//2+1:
         raise ValueError("Expected %d misses, Got %d" %
-                         (CACHE_SIZE, misses))
+                         (CACHE_SIZE//2+1, misses))
     if maxsize != CACHE_SIZE:
         raise ValueError("Expected %d maxsize, Got %d" %
                          (CACHE_SIZE, maxsize))
-    if currsize != CACHE_SIZE:
+    if currsize != CACHE_SIZE//2+1:
         raise ValueError("Expected %d currsize, Got %d" %
-                         (CACHE_SIZE, currsize))
+                         (CACHE_SIZE//2+1, currsize))
 
 import argparse
 
