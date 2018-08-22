@@ -30,25 +30,22 @@ static PyLockStatus PY_LOCK_FAILURE = 0;
 static PyLockStatus PY_LOCK_ACQUIRED = 1;
 static PyLockStatus PY_LOCK_INTR = -999999;
 #endif
-// global variables for rlock - only modified when holding lock
-static long rlock_owner = 0;
-static unsigned long rlock_count = 0;
 
 static int
-rlock_acquire(PyThread_type_lock lock)
+rlock_acquire(PyThread_type_lock lock, long* rlock_owner, unsigned long* rlock_count)
 {
     long tid;
     PyLockStatus r;
 
     tid = PyThread_get_thread_ident();
-    if (rlock_count > 0 && tid == rlock_owner) {
-        unsigned long count = rlock_count + 1;
-        if (count <= rlock_count) {
+    if (*rlock_count > 0 && tid == (*rlock_owner)) {
+        unsigned long count = *rlock_count + 1;
+        if (count <= *rlock_count) {
             PyErr_SetString(PyExc_OverflowError,
                             "Internal lock count overflowed");
             return -1;
         }
-        rlock_count = count;
+        *rlock_count = count;
         return 1;
     }
     /* do/while loop from acquire_timed */
@@ -79,34 +76,33 @@ rlock_acquire(PyThread_type_lock lock)
         }
     } while (r == PY_LOCK_INTR);  /* Retry if we were interrupted. */
     if (r == PY_LOCK_ACQUIRED) {
-        rlock_owner = tid;
-        rlock_count = 1;
+        *rlock_owner = tid;
+        *rlock_count = 1;
         return 1;
     }
     return -1;
 }
 
 static int
-rlock_release(PyThread_type_lock lock)
+rlock_release(PyThread_type_lock lock, long* rlock_owner, unsigned long* rlock_count)
 {
     long tid = PyThread_get_thread_ident();
 
-    if (rlock_count == 0 || rlock_owner != tid) {
+    if (*rlock_count == 0 || *rlock_owner != tid) {
         PyErr_SetString(PyExc_RuntimeError,
                         "cannot release un-acquired lock");
         return -1;
     }
 
-    if (--rlock_count == 0) {
-        rlock_owner = 0;
+    if (--(*rlock_count) == 0) {
+        *rlock_owner = 0;
         PyThread_release_lock(lock);
     }
     return 1;
 }
 
-
-#define ACQUIRE_LOCK(obj) rlock_acquire((obj)->lock)
-#define RELEASE_LOCK(obj) rlock_release((obj)->lock)
+#define ACQUIRE_LOCK(obj) rlock_acquire((obj)->lock, &((obj)->rlock_owner), &((obj)->rlock_count))
+#define RELEASE_LOCK(obj) rlock_release((obj)->lock, &((obj)->rlock_owner), &((obj)->rlock_count))
 #define FREE_LOCK(obj) PyThread_free_lock((obj)->lock)
 #else
 #define ACQUIRE_LOCK(obj) 1
@@ -315,6 +311,8 @@ typedef struct {
   // lock for cache access
 #ifdef WITH_THREAD
   PyThread_type_lock lock;
+  long rlock_owner;
+  unsigned long rlock_count;
 #endif
 } cacheobject ;
 
@@ -968,6 +966,9 @@ lru_call(lruobject *lru, PyObject *args, PyObject *kw)
     Py_DECREF(co);
     return NULL;
   }
+  // We need to initialize the rlock count and owner here
+  co->rlock_count = 0;
+  co->rlock_owner = 0;
 #endif
   if ((co->cache_dict = PyDict_New()) == NULL){
     Py_DECREF(co);
