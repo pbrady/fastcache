@@ -72,8 +72,8 @@ if sys.version_info[:2] >= (3, 3):
             for f in ['_py_untyped', '_c_untyped', '_py_typed', '_c_typed']:
                 s = '%s(%s)' % (f, a)
                 t = min(timeit.repeat('''
-                for i in range(100):
-                    {}
+for i in range(100):
+    {}
                 '''.format(s),
                         setup='from fastcache.benchmark import %s' % f,
                         repeat=10, number=1000))
@@ -92,8 +92,8 @@ if sys.version_info[:2] >= (3, 3):
         for f in ['_py_untyped', '_c_untyped', '_py_typed', '_c_typed']:
             s = '%s(i, j, a="spammy")' % f
             t = min(timeit.repeat('''
-            for i, j in _arg_gen():
-                %s
+for i, j in _arg_gen():
+    %s
             ''' % s, setup=setup.format(f),
                                   repeat=3, number=100))
             results.append([t, s])
