@@ -14,6 +14,12 @@ Obeys same API as Python 3.3/3.4 functools.lru_cache with 2 enhancements:
   *  "warning"         - Raise a `UserWarning` and call the wrapped function with the supplied arguments.
   *  "ignore"          - Just call the wrapped function with the supplied arguments.
 
+Performance Warning
+-------
+As of Python 3.5, the CPython interpreter implements `functools.lru_cache` in C.  It is generally faster than this library
+due to its use of a more performant internal API for dictionaries (and perhaps other reasons).  Therefore this library
+is only recommended for Python 2.6-3.4
+
 Install
 -------
 
